@@ -51,6 +51,11 @@ Miss Pecky is my first step toward answering that.
 🖥️ CLI boot log, custom voice personality config loaded, wav output played locally. No cloud. No nonsense.
 
 ---
+## 🎬 Timelapse Demo
+
+This short timelapse shows the modeling and setup of a real-time, audio-responsive chicken prototype, built with Blender and Unity.
+
+📺 [Watch on YouTube](https://youtube.com/shorts/i5Vd32qhwSQ)
 
 ## 🛠️ How to Run
 
