@@ -1,0 +1,14 @@
+{
+  "dependencies": {
+    "@elevenlabs/elevenlabs-js": "^2.7.0",
+    "@picovoice/cobra-node": "^2.0.4",
+    "@picovoice/leopard-node": "^2.0.6",
+    "@picovoice/porcupine-node": "^3.0.6",
+    "@picovoice/pvrecorder-node": "^1.2.8",
+    "axios": "^1.11.0",
+    "dotenv": "^17.2.1",
+    "elevenlabs": "^1.59.0",
+    "ollama": "^0.5.16",
+    "play-sound": "^1.1.6"
+  }
+}

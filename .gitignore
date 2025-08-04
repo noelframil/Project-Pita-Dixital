@@ -1,5 +1,4 @@
-node_modules/
-output_*.wav
-*.log
+node_modules
 .env
-.DS_Store
+output_*.mp3
+output_*.wav.env
