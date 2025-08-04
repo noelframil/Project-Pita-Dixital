@@ -57,6 +57,16 @@ This short timelapse shows the modeling and setup of a real-time, audio-responsi
 
 📺 [Watch on YouTube](https://youtube.com/shorts/i5Vd32qhwSQ)
 
+## 🎥 Demo Video #2: First Voice Test
+
+<p align="center">
+  <a href="https://www.youtube.com/shorts/b0vhIWtVDTY" target="_blank">
+    <img src="https://img.youtube.com/vi/b0vhIWtVDTY/0.jpg" alt="Miss Pecky First Voice Test" width="480"/>
+  </a>
+</p>
+
+This short clip is my **first live voice test** of Miss Pecky (Pita Tola) in action—fully offline, using our custom TTS pipeline. You’ll hear her Galician-accented greeting and playful “¡Pío, pío!” as she springs to life. It’s the second installment in this video series, documenting the evolution of our privacy-first, character-driven voice assistant.  
+
 ## 🛠️ How to Run
 
 ```bash
