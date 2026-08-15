@@ -1,4 +1,29 @@
+# Dependencias
 node_modules
+services/api/node_modules
+
+# Secretos — NUNCA versionar
 .env
+.env.*
+!.env.example
+services/api/.env
+services/api/.env.*
+!services/api/.env.example
+config_node/*credentials*.json
+config_node/*-key.json
+*.pem
+
+# Artefactos de audio
+output.mp3
 output_*.mp3
-output_*.wav.env
+output_*.wav
+
+# Compilado
+services/api/dist
+*.tsbuildinfo
+
+# Binarios grandes
+piper.tar.gz
+
+# Sistema
+.DS_Store

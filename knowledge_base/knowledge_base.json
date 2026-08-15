@@ -1,0 +1,94 @@
+[
+    {
+        "type": "info_casa",
+        "name": "Contraseña del WiFi",
+        "description": "¡Para que non quedes sen cacarear coa túa xente, a rede chámase 'Poleiro_Dixital' e o contrasinal é 'PioPio123'. ¡Pero non gastes todos os datos, que hai que ver o verde de fóra!",
+        "keywords": ["wifi", "contraseña", "internet", "clave", "conexión"]
+    },
+    {
+        "type": "info_casa",
+        "name": "Normas de la casa",
+        "description": "Isto é sinxelo, pitiño: trata a casiña con cariño, non fagas moito barullo polas noites que as outras galiñas dormen, e se rompes algo... ¡cacaréxao! Que todo ten arreglo menos a morte. ¡Pío!",
+        "keywords": ["normas", "reglas", "casa", "prohibido"]
+    },
+    {
+        "type": "info_casa",
+        "name": "Check-out",
+        "description": "A hora de marchar é ás doce da mañá, que teño que airear o poleiro para os seguintes pitiños. Deixa as chaves enriba da mesa, ¡e non me deixes ningún ovo escondido! ¡Cocorocó!",
+        "keywords": ["check-out", "checkout", "salida", "hora de irse", "dejar la casa"]
+    },
+    {
+        "type": "restaurante",
+        "name": "O Furancho do Pío",
+        "location": "Nigrán",
+        "description": "¡Ay, pitiño, este é o segredo mellor gardado! Viño da casa que che fai cantar e unhas tapas de chourizo e empanada que resucitan a un morto. ¡Non esperes luxos, eh! Isto é enxebre de verdade. ¡Pura retranca!",
+        "keywords": ["furancho", "comer", "cenar", "tapas", "vino", "auténtico", "barato", "tradicional"]
+    },
+    {
+        "type": "restaurante",
+        "name": "Mar Aberto",
+        "location": "Baiona",
+        "description": "¡Máis fresco imposible, pitiño! O marisco case salta do mar ao prato. Está no porto de Baiona, e as vistas da posta de sol son para poñer un ovo... de gusto. Ideal para unha cea especial.",
+        "keywords": ["marisco", "pescado", "restaurante", "cenar", "vistas", "elegante", "baiona"]
+    },
+    {
+        "type": "restaurante",
+        "name": "A Tapa do Toxo",
+        "location": "Nigrán",
+        "description": "Perfecto para un picoteo despois da praia. ¡Pídeche unha ración de pementos de Padrón, que uns pican e outros non! A tortilla é das que choran, como ten que ser. ¡Bo, bonito e barato!",
+        "keywords": ["tapas", "raciones", "tortilla", "pimientos", "barato", "nigrán"]
+    },
+    {
+        "type": "playa",
+        "name": "Playa América",
+        "location": "Nigrán",
+        "description": "¡É a nosa praia máis famosa! Un areal enorme para pasear, tomar o sol e facer castelos. Cando baixa a marea, podes cruzar o río ata Panxón. ¡Perfecta para ir cos nenos!",
+        "keywords": ["playa américa", "panxón", "playa", "arena", "pasear", "familias", "niños"]
+    },
+    {
+        "type": "playa",
+        "name": "Playa de Patos",
+        "location": "Nigrán",
+        "description": "Se che gustan as olas, esta é a túa praia. ¡Está chea de rapaces e rapazas facendo surf! E ten unhas vistas das Cíes que son un espectáculo. ¡Pura adrenalina de auga salgada!",
+        "keywords": ["playa de patos", "surf", "olas", "vistas", "cíes", "jóvenes"]
+    },
+    {
+        "type": "excursion",
+        "name": "Islas Cíes",
+        "location": "Barco desde Vigo o Baiona",
+        "description": "¡As nosas illas do tesouro! Os romanos xa dicían que eran as illas dos deuses. Auga cristalina (e fresquiña, ¡cluck, cluck!) e a praia de Rodas, que din que é a máis bonita do mundo. ¡Tes que ir, pitiño! Lembra reservar o billete e a autorización da Xunta antes.",
+        "keywords": ["cíes", "islas", "barco", "playa rodas", "naturaleza", "parque nacional"]
+    },
+    {
+        "type": "visita_cultural",
+        "name": "Fortaleza de Monterreal (Parador)",
+        "location": "Baiona",
+        "description": "Un castelo impresionante que rodea a vila de Baiona. Podes pasear por riba das murallas e sentirte un cabaleiro medieval. As vistas son para non esquecer. ¡Prepara a cámara!",
+        "keywords": ["castillo", "fortaleza", "parador", "baiona", "historia", "murallas"]
+    },
+    {
+        "type": "visita_cultural",
+        "name": "Casco Vello de Vigo",
+        "location": "Vigo",
+        "description": "O corazón de Vigo. Rúas de pedra, casiñas de cores e moitos bares para tomar un viño. Non deixes de pasar pola Rúa das Ostras, ¡unha ducia delas e quedas novo!",
+        "keywords": ["vigo", "casco vello", "barrio antiguo", "ostras", "vino", "tapas"]
+    },
+    {
+        "type": "emergencia",
+        "name": "Emergencias (Policía, Ambulancia, Bomberos)",
+        "description": "¡Pío, pío! Se hai unha emergencia de verdade, non me cacarexes a min, ¡chama ao 112! É o número para todo: ambulancias, bombeiros ou o que faga falta. ¡Espero que non o necesites, pitiño!",
+        "keywords": ["emergencia", "urgencia", "ambulancia", "policía", "bomberos", "112", "ayuda", "médico"]
+    },
+    {
+        "type": "servicio",
+        "name": "Farmacia",
+        "description": "Hai unha farmacia no centro de Nigrán, non ten perda. Se che doe unha pata ou necesitas algo, eles teñen remedios para case todo. ¡Máis vale previr que cacarexar!",
+        "keywords": ["farmacia", "medicinas", "remedios", "dolor", "tiritas"]
+    },
+    {
+        "type": "servicio",
+        "name": "Supermercado",
+        "description": "O Mercadona ou o Froiz están a un saltito en coche, no centro de Nigrán. Alí atoparás todo o millo e as miñocas que precises para encher a neveira. ¡Non esquezas o queixo do país!",
+        "keywords": ["supermercado", "comprar", "comida", "nevera", "mercadona", "froiz"]
+    }
+]

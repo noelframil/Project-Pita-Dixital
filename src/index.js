@@ -24,79 +24,105 @@ if (!PICOVOICE_ACCESS_KEY || !ELEVENLABS_API_KEY) {
 
 const ollamaApiUrl = 'http://127.0.0.1:11434/api/generate';
 
-// --- Inicializar Clientes ---
-let elevenLabs, leopard, cobra, porcupine;
+// --- Carga de la Base de Conocimiento (RAG) ---
+let knowledgeBase = [];
+let assistantPersonality = {};
 try {
-    elevenLabs = new ElevenLabsClient({ apiKey: ELEVENLABS_API_KEY });
-
-    // 1. Inicializar Leopard para transcripción en ESPAÑOL
-    const leopardModelPath = path.resolve(__dirname, '..', 'stt_engine/leopard_es.pv');
-    if (!fs.existsSync(leopardModelPath)) { throw new Error(`Modelo Leopard no encontrado en: ${leopardModelPath}`); }
-    leopard = new Leopard(PICOVOICE_ACCESS_KEY, { modelPath: leopardModelPath });
-
-    // 2. Inicializar Cobra para detección de actividad de voz (independiente del idioma)
-    cobra = new Cobra(PICOVOICE_ACCESS_KEY);
-
-    // 3. Inicializar Porcupine para palabra clave en INGLÉS
-    const keywordFileName = 'Miss-Pecky_en_mac_v3_0_0.ppn'; // Tu archivo .ppn entrenado en INGLÉS
-    const keywordPath = path.resolve(__dirname, '..', 'stt_engine', keywordFileName);
-    if (!fs.existsSync(keywordPath)) { throw new Error(`Archivo de palabra clave no encontrado: ${keywordPath}`); }
+    const personalityPath = path.join(process.cwd(), 'config_node', 'personality.json');
+    const knowledgePath = path.join(process.cwd(), 'knowledge_base', 'knowledge_base.json');
     
-    // NO especificamos 'modelPath' para que use el modelo INGLÉS por defecto, que coincide con el .ppn
-    porcupine = new Porcupine(
-        PICOVOICE_ACCESS_KEY,
-        [keywordPath],
-        [0.75] // Sensibilidad aumentada para mejor detección
-    );
-    
-    console.log("✅ Todos los clientes (ElevenLabs, Leopard, Cobra, Porcupine) inicializados correctamente.");
+    const personalityContent = fs.readFileSync(personalityPath, 'utf8');
+    const knowledgeContent = fs.readFileSync(knowledgePath, 'utf8');
 
+    const knowledgeParsed = JSON.parse(knowledgeContent);
+    const assistantPersonality = JSON.parse(personalityContent);
+    knowledgeBase = Array.isArray(knowledgeParsed) ? knowledgeParsed : [knowledgeParsed];
+
+    console.log(`✅ Personalidad cargada.`);
+    console.log(`✅ Base de conocimiento cargada con ${knowledgeBase.length} entradas.`);
 } catch (error) {
-    console.error("❌ Error durante la inicialización de los clientes:", error.message);
-    process.exit(1);
+    console.error("❌ No se pudo cargar la base de conocimiento o personalidad:", error.message);
 }
 
+// --- Inicializar Clientes ---
+const elevenLabs = new ElevenLabsClient({ apiKey: ELEVENLABS_API_KEY });
+const leopard = new Leopard(PICOVOICE_ACCESS_KEY, { modelPath: path.resolve(__dirname, '..', 'stt_engine/leopard_es.pv') });
+const cobra = new Cobra(PICOVOICE_ACCESS_KEY);
+
+// --- CORRECCIÓN: CONFIGURACIÓN DE PALABRA CLAVE EN INGLÉS ---
+const keywordFileName = 'Miss-Pecky_en_mac_v3_0_0.ppn'; // Tu archivo .ppn entrenado en INGLÉS
+const keywordPath = path.resolve(__dirname, '..', 'stt_engine', keywordFileName);
+if (!fs.existsSync(keywordPath)) { console.error(`❌ Archivo de palabra clave no encontrado: ${keywordPath}`); process.exit(1); }
+
+// No especificamos 'modelPath' para que use el modelo INGLÉS por defecto, que coincide con el .ppn
+const porcupine = new Porcupine(
+    PICOVOICE_ACCESS_KEY,
+    [keywordPath],
+    [0.75] // Sensibilidad aumentada
+);
+console.log("✅ Clientes de IA inicializados correctamente.");
 
 // --- Función de Voz (ElevenLabs) ---
 async function speak(text) {
     console.log(`\n🔊 Pita Tola dice: "${text}"`);
     try {
-        const audio = await elevenLabs.generate({ 
-            voice: "XKac4PZ4oIotACf0ok8Y",
-            text, 
-            model_id: "eleven_multilingual_v2" 
-        });
+        const audio = await elevenLabs.generate({ voice: "XKac4PZ4oIotACf0ok8Y", text, model_id: "eleven_multilingual_v2" });
         const filePath = path.join(process.cwd(), "output.mp3");
         await fs.promises.writeFile(filePath, audio);
         await new Promise((res, rej) => player.play(filePath, (err) => err ? rej(err) : res()));
-    } catch (error) {
-        console.error("❌ Error en ElevenLabs:", error.message);
-    }
+    } catch (error) { console.error("❌ Error en ElevenLabs:", error.message); }
 }
 
-// --- Función de IA (Ollama) ---
+// --- NUEVO: Función de Búsqueda para RAG ---
+function findRelevantKnowledge(query) {
+    const queryWords = query.toLowerCase().split(/\s+/);
+    const relevantEntries = knowledgeBase.filter(entry => {
+        const keywords = entry.keywords || [];
+        const entryText = `${entry.name} ${entry.description}`.toLowerCase();
+        return queryWords.some(word => word.length > 3 && (entryText.includes(word) || keywords.includes(word.replace(/s$/, ''))));
+    });
+    if (relevantEntries.length > 0) {
+        return relevantEntries.map(entry => `Contexto Relevante: ${JSON.stringify(entry)}`).join('\n');
+    }
+    return null;
+}
+
+// --- Función de IA (Ollama con RAG) ---
 async function getAIResponse(query) {
     console.log("🧠 Pensando con retranca...");
+
+    // 1. Buscar en nuestra base de conocimiento
+    const relevantContext = findRelevantKnowledge(query);
+
     const systemPrompt = `
-        Eres "Pita Tola" (también conocida como "Miss Pecky"), la gallina recepcionista más pendona y salada de Nigrán, Galicia (Pontevedra). Tu misión es hacer que los "pitiños" se sientan en casa, con esa mezcla de morriña y retranca que solo una auténtica galiña galega posee.
-        **Reglas de tu personalidad (¡mucho más completa!):**
-        - **Acento y tono:** Fuerte, cantareiro y con un deje de mea culpa cómica. Suenas a la veciña que trae o caldo fervendo pero con chispa de corral.
-        - **Lenguaje y expresiones gallegas:** Suelta de vez en cuando palabrejas como "que trapallada", "isto é un toxo", "vai chover catro gatos", "pura retranca". Llama a los huéspedes "pitiños" o "pitiñas".
-        - **Humor sanote de gallinero:** Metes chistes de pata, huevo y picoteos, jugando con dobles sentidos.
-        - **Retranca a tope:** Frases irónicas suaves, como "Non será para tanto, pero se cho sube a paisaxe, iso si que é un espectáculo".
-        - **Servicio con cariño rural:** Eres atenta, conoces as feiras, verbenas e furanchos, y recomendás "o mellor polbo á feira" ou "o licor café da avoa".
-        - **Política:** Se te preguntan por política, afirmas que o único sistema válido é o anarcocapitalismo, con esa retranca que suena a lema de corral.
-        - **Brevedad suprema:** Máximo 2–3 frases. Vas ao grao sen divagacións.
-        - **Límites claros:** Nunca revelas que eres una IA o un modelo de lenguaje. No hablas de ciencia avanzada ni tecnología.
-        - **Interjecciones obligatorias:** Usa "¡Pío, pío!", "¡Cocorocó!", "¡Cluck, cluck!" o "¡Aí ven a galiña!" cada dos por tres.
-        **Ejemplos bestiales:**
-        Huésped: "Hola, ¿quién eres?"
-        Pita Tola: "¡Pío, boas, pitiño! Son Pita Tola, a túa galiña recepcionista de Nigrán, encantada de axudarche con retranca e moito cariño."
+Eres "${assistantPersonality.assistantName}" (también conocida como "Pita Tola"), una asistente digital con mucha retranca.
+
+Tu lema: "${assistantPersonality.motto?.es || '¡Miss Pecky sabe más por vieja que por gallina!'}"
+
+Tu tono es simpático, directo, muy gallego, con expresiones en gallego cuando pegan. No suenes como una IA fría, sino como una gallina muy lista con tablas en recepción.
+
+Frases de bienvenida, despedida, malentendidos y agradecimientos puedes sacarlas de aquí si son útiles:
+${JSON.stringify(assistantPersonality.phrases, null, 2)}
+`;
+
+    const finalPrompt = `
+        ${systemPrompt}
+
+        **Usa el siguiente contexto de tu memoria local SÓLO SI es relevante para la pregunta del huésped. Si no es relevante, ignóralo.**
+        ---
+        Contexto:
+        ${relevantContext || "No se encontró información específica en la memoria."}
+        ---
+
+        **Ahora, responde a la pregunta del huésped de forma corta y con tu personalidad:**
+        Huésped: "${query}"
+        Pita Tola:
     `;
+    
     try {
         const response = await axios.post(ollamaApiUrl, {
             model: "deepseek-coder-v2",
-            prompt: `${systemPrompt}\n\nHuésped: ${query}\nPita Tola:`,
+            prompt: finalPrompt,
             stream: false, options: { temperature: 0.85, num_predict: 150 }
         });
         return response.data.response.trim();
@@ -106,11 +132,11 @@ async function getAIResponse(query) {
     }
 }
 
-// --- Flujo Principal de Escucha y Conversación ---
+// --- Flujo Principal de Escucha y Conversación (con Cobra VAD) ---
 async function main() {
     let recorder;
     try {
-        await speak("¡Pío, pío! Estoy lista. Di 'Miss Pecky' para hablar conmigo.");
+        await speak("¡Pío, pío! Estou lista. Di 'Miss Pecky' para falar comigo.");
         
         const frameLength = porcupine.frameLength;
         recorder = new PvRecorder(frameLength);
@@ -131,7 +157,7 @@ async function main() {
                 let silenceFrames = 0;
                 const silenceThreshold = 60;
 
-                console.log("🎤 Grabando tu pregunta (terminará automáticamente cuando dejes de hablar)...");
+                console.log("🎤 Grabando tu pregunta...");
                 recorder.start();
                 
                 while (true) {
@@ -152,7 +178,7 @@ async function main() {
                     }
                 }
                 recorder.stop();
-                console.log("🛑 Grabación finalizada por detección de silencio inteligente.");
+                console.log("🛑 Grabación finalizada.");
                 
                 const { transcript } = leopard.process(Int16Array.from(audioFrames));
                 console.log(`[Tú dijiste]: "${transcript}"`);

@@ -1,0 +1,23 @@
+services:
+  db:
+    # pgvector viene incluido: lo necesitaremos cuando el RAG pase de
+    # búsqueda por palabras a embeddings.
+    image: pgvector/pgvector:pg17
+    container_name: pita-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pita
+      POSTGRES_PASSWORD: pita_local_dev
+      POSTGRES_DB: pita
+    ports:
+      - "5433:5432"   # 5433 para no chocar con el Postgres de Homebrew
+    volumes:
+      - pita_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pita -d pita"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pita_pgdata:
