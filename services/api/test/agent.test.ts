@@ -168,8 +168,10 @@ describe('runAgent — errores en cascada', () => {
   });
 });
 
-describe('runAgent — handoff', () => {
-  it('corta el bucle en seco cuando el modelo pide una persona', async () => {
+describe('runAgent — herramientas del sistema', () => {
+  it('una herramienta SIN ejecutor corta el bucle en seco', async () => {
+    // Así funciona el handoff: la decisión de qué hacer con la conversación no
+    // es del bucle, así que devuelve el control a quien llamó.
     fake.script = [
       {
         content: '',
@@ -188,22 +190,76 @@ describe('runAgent — handoff', () => {
     ];
 
     const run = await runAgent(
-      baseOptions({ tools: [toolQueFalla], builtinTools: [HANDOFF_TOOL] }),
+      baseOptions({ tools: [toolQueFalla], builtins: [{ spec: HANDOFF_TOOL }] }),
     );
 
-    assert.equal(run.stopReason, 'handoff');
-    assert.equal(run.handoff?.motivo, 'frustracion');
-    assert.equal(run.handoff?.urgencia, 'alta');
-    assert.match(run.handoff!.resumen, /cobro duplicado/);
+    assert.equal(run.stopReason, 'interrupted');
+    assert.equal(run.interruptedBy?.toolName, HANDOFF_TOOL_NAME);
+    assert.equal(run.interruptedBy?.input.motivo, 'frustracion');
+    assert.match(String(run.interruptedBy?.input.resumen), /cobro duplicado/);
     // Seguir razonando después de decidir que hace falta una persona es gastar
     // por gastar: solo hubo una llamada al modelo.
     assert.equal(fake.requests.length, 1);
   });
 
-  it('ofrece la herramienta de handoff junto a las del cliente', async () => {
+  it('una herramienta CON ejecutor se ejecuta y el bucle sigue', async () => {
+    const llamadas: Array<Record<string, unknown>> = [];
+
+    fake.script = [
+      { content: '', toolCalls: [{ name: 'recordar', arguments: { dato: 'se llama Carlos' } }] },
+      { content: 'Encantado, Carlos.' },
+    ];
+
+    const run = await runAgent(
+      baseOptions({
+        builtins: [
+          {
+            spec: { name: 'recordar', description: 'x', inputSchema: { type: 'object' } },
+            handler: async (input) => {
+              llamadas.push(input);
+              return 'Anotado.';
+            },
+          },
+        ],
+      }),
+    );
+
+    assert.equal(run.stopReason, 'final_answer');
+    assert.equal(run.text, 'Encantado, Carlos.');
+    assert.deepEqual(llamadas, [{ dato: 'se llama Carlos' }]);
+    // El resultado del ejecutor llegó al modelo en la vuelta siguiente.
+    const segunda = fake.requests[1]!.messages as Array<{ role: string; content: string }>;
+    assert.equal(segunda.find((m) => m.role === 'tool')?.content, 'Anotado.');
+  });
+
+  it('un ejecutor que lanza se contesta como error, sin romper el turno', async () => {
+    fake.script = [
+      { content: '', toolCalls: [{ name: 'rompe', arguments: {} }] },
+      { content: 'No he podido, lo siento.' },
+    ];
+
+    const run = await runAgent(
+      baseOptions({
+        builtins: [
+          {
+            spec: { name: 'rompe', description: 'x', inputSchema: { type: 'object' } },
+            handler: async () => {
+              throw new Error('la base de datos no responde');
+            },
+          },
+        ],
+      }),
+    );
+
+    assert.equal(run.stopReason, 'final_answer');
+    assert.equal(run.steps[0]!.results[0]!.isError, true);
+    assert.match(run.steps[0]!.results[0]!.content, /la base de datos no responde/);
+  });
+
+  it('ofrece las del sistema junto a las del cliente', async () => {
     fake.script = [{ content: 'hola' }];
 
-    await runAgent(baseOptions({ tools: [toolQueFalla], builtinTools: [HANDOFF_TOOL] }));
+    await runAgent(baseOptions({ tools: [toolQueFalla], builtins: [{ spec: HANDOFF_TOOL }] }));
 
     const tools = fake.requests[0]!.tools as Array<{ function: { name: string } }>;
     const nombres = tools.map((t) => t.function.name);

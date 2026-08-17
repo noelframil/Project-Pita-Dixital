@@ -49,6 +49,9 @@ Uso:
   npm run admin -- list-tools <slug>
   npm run admin -- remove-tool <slug> <nombre>
   npm run admin -- set-handoff <slug> <https://url-del-webhook>
+  npm run admin -- add-subagent <slug> <ruta.json>
+  npm run admin -- list-subagents <slug>
+  npm run admin -- set-feature <slug> <memoria|autocritica|handoff> <on|off>
   npm run admin -- list
 
 Opciones de autoconfig:
@@ -501,6 +504,153 @@ async function setHandoff(slug: string, url: string) {
   console.log('     rechaza lo que llegue con más de 5 minutos de antigüedad\n');
 }
 
+// ── Sub-agentes especialistas ────────────────────────────────────
+
+interface SubAgentFile {
+  name: string;
+  description: string;
+  system_prompt: string;
+  tool_names?: string[];
+  provider?: string;
+  model?: string;
+  temperature?: number;
+  max_tokens?: number;
+  max_iterations?: number;
+}
+
+/**
+ * Alta desde JSON, como las herramientas: un especialista lleva prompt del
+ * sistema y lista de herramientas, y eso no cabe en una línea de comandos.
+ */
+async function addSubAgent(slug: string, path: string) {
+  const clientId = await clientIdBySlug(slug);
+  const def = JSON.parse(await readFile(path, 'utf8')) as SubAgentFile;
+
+  if (!TOOL_NAME_PATTERN.test(def.name ?? '')) {
+    console.error(
+      `❌ El nombre "${def.name}" no vale: acaba dentro de un enum de esquema JSON. ` +
+        'Usa ^[a-z][a-z0-9_]{0,63}$.',
+    );
+    process.exit(1);
+  }
+  if (!def.description?.trim()) {
+    console.error(
+      '❌ Falta la descripción. Es lo único con lo que el orquestador decide a quién ' +
+        'delegar: escribe QUÉ se le puede encargar, no quién es.',
+    );
+    process.exit(1);
+  }
+  if (!def.system_prompt?.trim()) {
+    console.error('❌ Falta system_prompt.');
+    process.exit(1);
+  }
+
+  // Aviso, no error: la herramienta puede darse de alta después. Pero un
+  // especialista sin sus herramientas falla de una forma que cuesta entender.
+  const nombres = def.tool_names ?? [];
+  if (nombres.length > 0) {
+    const existentes = await query<{ name: string }>(
+      `SELECT name FROM tools WHERE client_id = $1 AND is_active AND name = ANY($2::text[])`,
+      [clientId, nombres],
+    );
+    const faltan = nombres.filter((n) => !existentes.some((e) => e.name === n));
+    if (faltan.length > 0) {
+      console.log(`⚠️  Herramientas que aún no existen: ${faltan.join(', ')}`);
+      console.log('   El especialista funcionará sin ellas hasta que las des de alta.\n');
+    }
+  }
+
+  await query(
+    `INSERT INTO sub_agents
+       (client_id, name, description, system_prompt, tool_names,
+        provider, model, temperature, max_tokens, max_iterations)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+     ON CONFLICT (client_id, name)
+       DO UPDATE SET description = EXCLUDED.description,
+                     system_prompt = EXCLUDED.system_prompt,
+                     tool_names = EXCLUDED.tool_names,
+                     provider = EXCLUDED.provider,
+                     model = EXCLUDED.model,
+                     temperature = EXCLUDED.temperature,
+                     max_tokens = EXCLUDED.max_tokens,
+                     max_iterations = EXCLUDED.max_iterations,
+                     is_active = TRUE`,
+    [
+      clientId,
+      def.name,
+      def.description,
+      def.system_prompt,
+      nombres,
+      def.provider ?? null,
+      def.model ?? null,
+      def.temperature ?? null,
+      def.max_tokens ?? null,
+      def.max_iterations ?? 3,
+    ],
+  );
+
+  console.log(`✅ Especialista "${def.name}" registrado para "${slug}".`);
+  console.log(`   herramientas: ${nombres.join(', ') || '(ninguna)'}\n`);
+}
+
+async function listSubAgents(slug: string) {
+  const clientId = await clientIdBySlug(slug);
+  const rows = await query<{
+    name: string;
+    description: string;
+    tool_names: string[];
+    is_active: boolean;
+  }>(
+    `SELECT name, description, tool_names, is_active FROM sub_agents
+      WHERE client_id = $1 ORDER BY name`,
+    [clientId],
+  );
+
+  if (rows.length === 0) {
+    console.log(`Sin especialistas en "${slug}". Añade uno con: add-subagent ${slug} <ruta.json>`);
+    return;
+  }
+
+  for (const r of rows) {
+    console.log(`${r.is_active ? '●' : '○'} ${r.name}`);
+    console.log(`    ${r.description}`);
+    console.log(`    herramientas: ${r.tool_names.join(', ') || '(ninguna)'}\n`);
+  }
+}
+
+/** Enciende o apaga capas opcionales por cliente. */
+async function setFeature(slug: string, feature: string, value: string) {
+  const clientId = await clientIdBySlug(slug);
+
+  const COLUMNS: Record<string, string> = {
+    memoria: 'memory_enabled',
+    autocritica: 'reflection_enabled',
+    handoff: 'handoff_enabled',
+  };
+
+  const column = COLUMNS[feature];
+  if (!column) {
+    console.error(`❌ Capa desconocida: "${feature}". Disponibles: ${Object.keys(COLUMNS).join(', ')}`);
+    process.exit(1);
+  }
+
+  const enabled = value === 'on' || value === 'true' || value === 'si';
+
+  await query(
+    `UPDATE bot_configs SET ${column} = $2 WHERE client_id = $1 AND name = 'default'`,
+    [clientId, enabled],
+  );
+
+  console.log(`✅ ${feature} = ${enabled ? 'activada' : 'desactivada'} para "${slug}".`);
+  if (feature === 'autocritica' && enabled) {
+    console.log(
+      '\n⚠️  La autocrítica añade una llamada completa al modelo por turno, y dos o\n' +
+        '   tres si el borrador se rechaza. Es secuencial: el usuario espera. Conviene\n' +
+        '   configurar reflection_model con uno más rápido y barato que el del bot.\n',
+    );
+  }
+}
+
 async function list() {
   const rows = await query<{
     slug: string;
@@ -569,6 +719,18 @@ try {
     case 'set-handoff':
       if (args.length < 2) usage();
       await setHandoff(args[0]!, args[1]!);
+      break;
+    case 'add-subagent':
+      if (args.length < 2) usage();
+      await addSubAgent(args[0]!, args[1]!);
+      break;
+    case 'list-subagents':
+      if (args.length < 1) usage();
+      await listSubAgents(args[0]!);
+      break;
+    case 'set-feature':
+      if (args.length < 3) usage();
+      await setFeature(args[0]!, args[1]!, args[2]!);
       break;
     case 'add-tool':
       if (args.length < 2) usage();

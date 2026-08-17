@@ -40,7 +40,7 @@ npm run dev
 ## Pruebas
 
 ```bash
-npm test          # 146 pruebas con node --test, sin BD ni claves
+npm test          # 184 pruebas con node --test, sin BD ni claves
 npm run typecheck # cubre src/ y test/
 ```
 
@@ -227,6 +227,103 @@ por una cola con reintentos y backoff exponencial, y se firma con HMAC-SHA256
 sobre `timestamp.cuerpo`; la marca va *dentro* de la firma para que una entrega
 capturada no se pueda reenviar indefinidamente.
 
+## Memoria semántica: lo que el bot recuerda de cada persona
+
+Distinta del resumen de conversación, y conviene no confundirlas:
+`conversations.summary` condensa **una** conversación y muere con ella;
+`user_facts` guarda hechos que siguen siendo ciertos dentro de seis meses, en
+otro canal y en otra conversación.
+
+```bash
+npm run admin -- set-feature casa-nigran memoria on   # activada por defecto
+```
+
+**El identificador de usuario ya existía**: es `contacts.id`. La tabla `contacts`
+más `contact_identities` resuelve desde el esquema inicial que la misma persona
+escribiendo por WhatsApp el martes y por Instagram el jueves converja en un
+único contacto. Guardar además el teléfono en texto sería peor — un contacto
+tiene *varias* identidades, así que «el identificador» en singular no existe.
+
+Los hechos se capturan con la herramienta `memorize_user_fact`, que el modelo
+llama cuando le parece, no con un extractor que corre en cada turno. Un extractor
+dispara una llamada extra por mensaje —la mayoría no revelan nada memorable— y
+decide sin ver la conversación.
+
+Cada hecho lleva una **clave normalizada** (`nombre`, `plan_contratado`). No
+estaba en la especificación y hace falta: sin ella, cada vez que alguien dice su
+nombre se guarda una fila nueva y a los tres meses la memoria son cuarenta
+variantes de lo mismo. Con clave, un dato que cambia **sustituye** al anterior —
+y el valor viejo queda en `user_fact_revisions`, porque a veces el modelo
+entiende torcido una frase y machaca un dato bueno.
+
+## Autocrítica antes de enviar
+
+Un segundo modelo revisa el borrador contra las reglas del cliente.
+
+```bash
+npm run admin -- set-feature casa-nigran autocritica on
+```
+
+**Viene apagada por defecto**, y conviene decir por qué antes que para qué:
+añade **una llamada completa al modelo por turno**, y dos o tres si el borrador
+se rechaza. No es «rápida y paralela» — no puede ser paralela, porque el crítico
+necesita el borrador que aún no existe. Es secuencial y el usuario espera. Si
+pesa más la seguridad de marca que la latencia, se enciende; esa decisión es del
+cliente. Configura `reflection_model` con uno más barato: juzgar un borrador
+contra unas reglas es bastante más fácil que redactarlo.
+
+El crítico está calibrado **para no rechazar de más**. Un crítico severo es peor
+que no tenerlo: cada rechazo cuesta dos llamadas más y devuelve un texto
+reescrito tres veces que suena a formulario. Rechaza solo por cuatro motivos
+—datos inventados, guardrail saltado, no responder a lo preguntado, tono roto—
+y ante la duda aprueba. Y **juzga, no reescribe**: si propusiera el texto
+corregido, el modelo principal lo copiaría literal y la voz del cliente se
+perdería.
+
+Agotados los reintentos, se envía el último borrador igualmente. Las
+alternativas —dejar al usuario sin respuesta, o un error genérico— son peores
+que un texto imperfecto. Queda en la traza como `error` para poder medirlo: si
+pasa a menudo, el problema está en las reglas del cliente.
+
+## Sistema multi-agente
+
+Un orquestador habla con el usuario y delega en especialistas.
+
+```bash
+npm run admin -- add-subagent casa-nigran ./soporte.json   # ver subagent.example.json
+npm run admin -- list-subagents casa-nigran
+```
+
+La razón de existir no es el organigrama: un solo prompt con las herramientas de
+soporte, ventas y facturación a la vez se vuelve mediocre en las tres, y el
+modelo empieza a coger la herramienta equivocada.
+
+Tres reglas sostienen el diseño:
+
+- **Un solo nivel.** El especialista no recibe `delegate_to_agent`. Sin ese
+  tope, dos especialistas que se llamen mutuamente agotan un turno entero.
+- **El especialista no habla con el usuario.** Su respuesta vuelve como
+  resultado de herramienta y el orquestador la sintetiza con su voz. Si
+  escribiera directamente, el usuario notaría el cambio de tono a mitad de
+  conversación.
+- **Arranca con historial vacío.** Lo único que recibe es la tarea que le
+  escribió el orquestador. Pasarle la conversación entera parecería más útil y
+  sería peor: volvería a ser un generalista con otro prompt, se distraería con
+  lo que no es suyo, y el coste se multiplicaría por delegación. Obligar al
+  orquestador a redactar un encargo autónomo es lo que mantiene enfocado al
+  especialista — igual que cuando le pasas un caso a un compañero.
+
+Las trazas atribuyen cada paso: `agent_role` distingue `orchestrator`,
+`specialist` y `critic`, y `parent_run_id` reconstruye el árbol.
+
+```sql
+-- ¿Cuánto trabajo hizo cada uno en este turno?
+SELECT agent_role, agent_name, COUNT(*) pasos, SUM(tokens_used) tokens
+  FROM agent_traces
+ WHERE run_id = '...' OR parent_run_id = '...'
+ GROUP BY agent_role, agent_name;
+```
+
 ## Trazabilidad del agente (LLMOps)
 
 `messages` guarda la conversación. Entre el mensaje del usuario y la respuesta
@@ -379,6 +476,9 @@ src/
     agent.ts           Bucle ReAct: piensa, actúa, evalúa, repite
     telemetry.ts       Trazas del agente, sin esperar y sin poder romper el turno
     proactive.ts       Redacción de mensajes que inicia el bot, con sus frenos
+    userFacts.ts       Memoria semántica: hechos que sobreviven a la conversación
+    reflection.ts      El crítico que revisa el borrador antes de enviarlo
+    subagents.ts       Especialistas y delegación de un solo nivel
     prompt.ts          Compilación de plantilla en una pasada + lista blanca
     autoconfig.ts      Meta-prompting: descripción del negocio → bot_config validada
     tools.ts           Registro y ejecución de herramientas, con los controles de red

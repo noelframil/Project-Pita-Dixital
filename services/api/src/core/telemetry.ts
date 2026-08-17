@@ -32,6 +32,12 @@ import { config } from '../config.js';
 
 export type AgentStepType = 'thought' | 'tool_call' | 'tool_result' | 'error';
 
+/**
+ * Quién dio el paso. Con varios agentes trabajando en un mismo turno, la traza
+ * deja de responder a "¿por qué contestó esto?" si no dice quién hizo cada cosa.
+ */
+export type AgentRole = 'orchestrator' | 'specialist' | 'critic';
+
 export interface TraceEntry {
   conversationId: string;
   runId: string;
@@ -41,6 +47,11 @@ export interface TraceEntry {
   payload?: Record<string, unknown>;
   latencyMs?: number | null;
   tokensUsed?: number | null;
+  agentRole?: AgentRole;
+  /** Nombre del especialista. Ausente en el orquestador. */
+  agentName?: string | null;
+  /** Turno del orquestador que originó este bucle anidado. */
+  parentRunId?: string | null;
 }
 
 /**
@@ -78,8 +89,8 @@ async function write(entry: TraceEntry): Promise<void> {
     await query(
       `INSERT INTO agent_traces
          (conversation_id, run_id, iteration, step_type, tool_name,
-          payload, latency_ms, tokens_used)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+          payload, latency_ms, tokens_used, agent_role, agent_name, parent_run_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [
         entry.conversationId,
         entry.runId,
@@ -89,6 +100,9 @@ async function write(entry: TraceEntry): Promise<void> {
         JSON.stringify(truncatePayload(entry.payload ?? {})),
         entry.latencyMs ?? null,
         entry.tokensUsed ?? null,
+        entry.agentRole ?? 'orchestrator',
+        entry.agentName ?? null,
+        entry.parentRunId ?? null,
       ],
     );
   } catch (err) {

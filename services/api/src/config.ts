@@ -108,6 +108,17 @@ const schema = z.object({
   // Tope de programación: 30 días. Más allá, el contexto de la conversación ya
   // no se parece en nada al de ahora y el mensaje llegaría descolocado.
   PROACTIVE_MAX_DELAY_MS: z.coerce.number().int().default(30 * 86_400_000),
+
+  // ── Autocrítica ─────────────────────────────────────────────
+  // Se activa por cliente (bot_configs.reflection_enabled), apagada por defecto:
+  // añade una llamada completa por turno y la decisión —seguridad de marca
+  // frente a latencia— es del cliente.
+  REFLECTION_MAX_TOKENS: z.coerce.number().int().default(300),
+  REFLECTION_TIMEOUT_MS: z.coerce.number().int().default(20_000),
+  // El prompt del cliente se recorta antes de mandárselo al crítico: uno muy
+  // largo dispara el coste de una llamada que solo tiene que juzgar el tono y
+  // los guardrails, que están al principio.
+  REFLECTION_MAX_PROMPT_CHARS: z.coerce.number().int().default(6_000),
 });
 
 const parsed = schema.safeParse(process.env);

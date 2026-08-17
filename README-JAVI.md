@@ -510,9 +510,99 @@ orden y aun así caí: no basta con ordenar, porque un `*` nuevo y uno original
 son indistinguibles. Ahora las negritas se apartan tras un marcador temporal
 hasta que la cursiva ha pasado.
 
+---
+
+### 2026-08-17 — Memoria semántica, autocrítica y multi-agente
+
+Tres capas. Una desviación de la especificación, y esta merece explicación:
+
+**Se pedía un `user_identifier` (teléfono, id de usuario final) distinto del
+`session_id`. Ese identificador ya existe: es `contacts.id`.** La tabla
+`contacts` junto con `contact_identities` resuelve exactamente ese problema
+desde el esquema inicial — la misma persona escribiendo por WhatsApp el martes y
+por Instagram el jueves converge en un único contacto. Guardar además el teléfono
+en texto habría sido peor: un contacto tiene **varias** identidades, así que «el
+identificador» en singular no existe, y duplicarlo abriría la puerta a que la
+memoria de una persona quedara partida entre dos claves.
+
+#### Memoria semántica
+
+[migración 005](services/api/migrations/005_entity_memory.sql) ·
+[core/userFacts.ts](services/api/src/core/userFacts.ts)
+
+- **Añadí una `fact_key` que no estaba en la especificación.** Sin ella, cada vez
+  que alguien dice su nombre se guarda una fila nueva, y a los tres meses el
+  bloque de memoria son cuarenta variantes de lo mismo compitiendo por sitio en
+  el prompt. Con clave, un dato que cambia **sustituye** al anterior.
+- El valor viejo queda en `user_fact_revisions`: un hecho que cambia machaca al
+  anterior, y a veces machaca mal — el modelo entiende torcido una frase y
+  sustituye un dato bueno. Sin historial no se puede recuperar.
+- Captura por herramienta y no por extractor en paralelo: un extractor dispara
+  una llamada extra por mensaje —la mayoría no revelan nada memorable— y decide
+  sin ver la conversación.
+- `memory_enabled` por cliente: recordar entre conversaciones es una decisión de
+  privacidad, no solo técnica, y tiene que poder apagarse.
+
+#### Autocrítica
+
+[core/reflection.ts](services/api/src/core/reflection.ts)
+
+**Viene apagada por defecto**, y esto es lo importante del diseño. La
+especificación la describía como «una llamada rápida y paralela»: no puede ser
+paralela, porque el crítico necesita el borrador que aún no existe. Es
+estrictamente secuencial y añade una llamada completa por turno, dos o tres si
+rechaza. Esa es una decisión de producto —seguridad de marca frente a latencia—
+y la toma el cliente, no nosotros.
+
+- El crítico está calibrado **para no rechazar de más**: uno severo es peor que
+  no tenerlo, porque cada rechazo cuesta dos llamadas más y devuelve un texto
+  reescrito tres veces que suena a formulario. Rechaza por cuatro motivos
+  concretos y ante la duda aprueba.
+- **Juzga, no reescribe.** Si propusiera el texto corregido, el modelo principal
+  lo copiaría literal y acabarías con dos modelos escribiendo y ninguno
+  responsable del tono.
+- Si el crítico falla o devuelve basura, **se aprueba el borrador**. Quedarse sin
+  respuesta porque el revisor está caído sería cambiar un riesgo pequeño por uno
+  grande.
+- Entre intentos se quitan los dos mensajes del anterior: acumularlos haría que
+  el modelo viera una pila de borradores rechazados y escribiera sobre sus
+  propias correcciones.
+
+#### Multi-agente
+
+[migración 006](services/api/migrations/006_reflection_subagents.sql) ·
+[core/subagents.ts](services/api/src/core/subagents.ts)
+
+- **Un solo nivel.** El especialista no recibe `delegate_to_agent`. Sin ese tope,
+  dos especialistas que se llamen mutuamente agotan un turno entero.
+- **Arranca con historial vacío.** Pasarle la conversación parecería más útil y
+  sería peor: volvería a ser un generalista con otro prompt y el coste se
+  multiplicaría por delegación. Obligar al orquestador a redactar un encargo
+  autónomo es lo que mantiene enfocado al especialista.
+- **No habla con el usuario**: su respuesta vuelve como resultado de herramienta
+  y el orquestador la sintetiza con su voz.
+- Trazas atribuidas: `agent_role` (`orchestrator`/`specialist`/`critic`),
+  `agent_name` y `parent_run_id` para reconstruir el árbol.
+
+#### El refactor que hizo posible todo esto
+
+El bucle tenía el handoff metido como caso especial dentro del `for`. Meter
+memoria y delegación así habría sido añadir dos casos especiales más. Lo
+generalicé a **herramientas del sistema con y sin ejecutor**: las que tienen
+ejecutor corren y el bucle sigue (memoria, delegación); las que no lo tienen
+cortan el bucle y devuelven el control (handoff). Las tres capas entraron sin
+volver a tocar el bucle.
+
+#### Un tropiezo de herramienta, no de código
+
+Actualicé el README con `Get-Content | Set-Content -Encoding utf8` de PowerShell
+5.1 y destrocé todas las tildes: lee en ANSI y escribe en UTF-8, duplicando la
+codificación. Restaurado desde git y rehecho con edición de fichero. Anotado
+aquí porque es una trampa que vuelve a aparecer en cualquier repo con acentos.
+
 ### Estado de las pruebas
 
-`npm run typecheck` limpio. **146 pruebas en verde**, sin BD ni claves:
+`npm run typecheck` limpio. **184 pruebas en verde**, sin BD ni claves:
 
 | Bloque | Nº | Cubre |
 |---|---|---|
@@ -525,6 +615,8 @@ hasta que la cursiva ha pasado.
 | Handoff y RAG | 22 | Bucles, firma HMAC, troceado, esquema de la herramienta |
 | Formateo de canal | 29 | WhatsApp, SMS, voz, tablas, troceado, casos límite |
 | Telemetría | 9 | Fire-and-forget, el agente sobrevive a la auditoría rota |
+| Autocrítica | 15 | Veredictos, reescritura, agotar intentos, coste acumulado |
+| Memoria y sub-agentes | 23 | Bloque de memoria, enum de delegación, aislamiento de herramientas |
 
 Las del agente corren el bucle completo contra un servidor que imita la API de
 Ollama, con guiones de varias vueltas: es la única forma de probar la parada,
@@ -532,10 +624,14 @@ la reinyección de errores y la deduplicación sin gastar tokens.
 
 **Sin verificar, y conviene decirlo claro:**
 
-- **Las migraciones 002, 003 y 004 no se han aplicado nunca.** No hay Docker ni
+- **Las migraciones 002 a 006 no se han aplicado nunca.** No hay Docker ni
   Postgres en este entorno. El SQL está revisado a ojo, no ejecutado. La 003 es
   la de más riesgo: `CREATE EXTENSION vector` y el índice HNSW dependen de que
   la imagen de pgvector esté como se espera.
+- **La memoria semántica y la delegación nunca han tocado la base de datos.** Se
+  han probado los esquemas, los bloques de prompt y el aislamiento de
+  herramientas —todo funciones puras—, pero `rememberFact` y `runSpecialist`
+  necesitan Postgres y no se han ejecutado.
 - **Ninguna llamada real a un modelo, a Whisper, a visión ni a embeddings.** No
   hay claves en este entorno. El bucle del agente sí se ha probado entero, pero
   contra un servidor que imita a Ollama, no contra las APIs de verdad.
