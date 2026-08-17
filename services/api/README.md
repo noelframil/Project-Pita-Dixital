@@ -15,27 +15,87 @@ canal. Añadir un canal cuesta un fichero, no un refactor.
 ## Arranque
 
 ```bash
-# 1. Base de datos
-docker compose up -d            # desde la raíz del repo
-
-# 2. Configuración
 cd services/api
-cp .env.example .env
+npm install
+
+# 1. Configuración
+cp .env.staging.example .env    # o .env.example para lo mínimo
 # Rellena ENCRYPTION_KEY y API_KEY_PEPPER:
 #   openssl rand -base64 32
 
-# 3. Esquema
-npm install
-npm run migrate
+# 2. Infraestructura: contenedores + espera + migraciones + parte del estado
+npm run infra:up
 
-# 4. Primer cliente
+# 3. Primer cliente
 npm run admin -- create-client casa-nigran "Casa de Nigrán"
 npm run admin -- import-knowledge casa-nigran ../../knowledge_base/knowledge_base.json
-npm run admin -- issue-key casa-nigran dev      # apunta la clave: solo se muestra una vez
+npm run admin -- issue-key casa-nigran dev --scopes chat,handoff,proactive
 
-# 5. Arrancar
+# 4. Arrancar
 npm run dev
 ```
+
+`infra:up` existe porque `docker compose up -d && npm run migrate` no basta:
+`docker compose` vuelve cuando el contenedor **arrancó**, no cuando Postgres
+acepta conexiones. En un arranque en frío hay diez o veinte segundos de
+diferencia —el primer arranque inicializa el clúster— y las migraciones
+lanzadas ahí fallan con «connection refused». Ese fallo parece un problema de
+configuración y solo era prisa.
+
+El script sondea con una conexión real (no mirando si el puerto está abierto:
+durante la inicialización el puerto ya acepta TCP pero la base de datos rechaza
+sesiones), aplica lo pendiente y comprueba que existan las catorce tablas, la
+extensión pgvector y el índice HNSW.
+
+## Consola de depuración
+
+```bash
+npm run chat -- casa-nigran              # sesión estable, la memoria persiste
+npm run chat -- casa-nigran otro_hilo
+```
+
+No es un cliente de chat, es una ventana de rayos X. Llama a `think()` igual que
+la ruta de Fastify —misma base de datos, mismo Redis, mismos proveedores— y va
+imprimiendo cada paso según ocurre:
+
+```
+[PENSAMIENTO] gris     qué razonaba el orquestador
+[HERRAMIENTA] cian     qué llamó y con qué argumentos
+[DELEGACIÓN]  magenta  a qué especialista y con qué encargo
+[AUTOCRÍTICA] v/r      veredicto del crítico y su motivo
+[HANDOFF]     amarillo cuándo pidió una persona y por qué
+```
+
+Se engancha con `observeTraces`, no sondeando `agent_traces`: sondear la tabla
+enseñaría el turno cuando ya terminó, que es cuando deja de servir para depurar.
+Funciona con `TRACE_ENABLED=false`, así que se puede depurar sin llenar la tabla
+de trazas de pruebas.
+
+Comandos: `/facts` (lo que el bot recuerda), `/canal whatsapp` (cambia solo el
+formato de salida, para ver cómo llega el Markdown), `/verbose`, `/nueva`,
+`/coste`.
+
+## Túnel para pruebas desde fuera
+
+```bash
+npm run tunnel                 # arranca la API y abre el túnel
+npm run tunnel -- --solo-tunel # la API ya corre aparte
+```
+
+Prueba `ngrok` por CLI si está instalado y si no `localtunnel`. Imprime las URL
+concretas de cada cosa que se puede probar.
+
+**Lo que este túnel no sirve:** apuntar el webhook de Meta a `/api/v1/chat`. Esa
+ruta es nuestra API — espera `Authorization: Bearer pita_...` y un cuerpo
+`{session_id, message}`; un webhook de Meta llega sin esa cabecera, con su
+propio formato y su propia firma. Devolvería 401 en todas las entregas.
+Traducir el formato de un proveedor al nuestro es trabajo de un
+`ChannelAdapter`, y hoy solo existe el de Telegram.
+
+Lo que sí sirve, y es lo que hay que validar antes de escribir ese adaptador:
+subir un audio o una foto reales desde un móvil contra `/api/v1/chat` con la
+clave de API, y recibir el webhook de handoff en un receptor propio para
+verificar la firma HMAC desde el otro lado.
 
 ## Pruebas
 

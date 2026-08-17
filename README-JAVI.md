@@ -600,9 +600,71 @@ Actualicé el README con `Get-Content | Set-Content -Encoding utf8` de PowerShel
 codificación. Restaurado desde git y rehecho con edición de fichero. Anotado
 aquí porque es una trampa que vuelve a aparecer en cualquier repo con acentos.
 
+---
+
+### 2026-08-17 — Herramientas para el encendido de infraestructura
+
+Tres herramientas para acompañar el primer arranque real. Dos desviaciones de
+la especificación, ambas por lo mismo — la especificación asumía cosas que este
+repo no tiene:
+
+**1. No había punto de escucha en proceso.** El CLI tenía que «interceptar el
+flujo del agente», pero `trace()` escribía a Postgres sin avisar a nadie. Añadí
+`observeTraces()` en [core/telemetry.ts](services/api/src/core/telemetry.ts),
+respetando las dos reglas que ya regían: se avisa de forma síncrona (si fuera
+asíncrono, la traza llegaría después de la respuesta y dejaría de servir para
+depurar) y un observador que lanza no rompe el turno ni tapa a los demás.
+
+Los observadores se avisan **aunque `TRACE_ENABLED` esté a false**: mirar en
+vivo y auditar después son cosas distintas, y se puede depurar sin llenar la
+tabla de trazas de pruebas.
+
+**2. Un webhook de WhatsApp no puede apuntar a `/api/v1/chat`.** La
+especificación pedía enrutar ahí el tráfico de los proveedores externos. Esa
+ruta es nuestra API: espera `Authorization: Bearer pita_...` y un cuerpo
+`{session_id, message}`, mientras que Meta llega sin esa cabecera, con su
+formato y su firma. Devolvería 401 en todas las entregas. Traducir el formato de
+un proveedor es trabajo de un `ChannelAdapter` y hoy solo existe el de Telegram.
+
+El túnel sirve igual para lo que hay que validar **antes** de escribir ese
+adaptador: subir un audio o una foto reales desde un móvil contra
+`/api/v1/chat`, y recibir el webhook de handoff en un receptor propio para
+verificar la firma HMAC desde el otro lado. El script lo dice en pantalla en vez
+de dejar que se descubra a base de 401.
+
+#### Qué hay
+
+| Comando | Qué hace |
+|---|---|
+| `npm run infra:up` | Contenedores → espera real → migraciones → parte del estado |
+| `npm run chat -- <slug>` | Consola con el pensamiento del agente en colores |
+| `npm run tunnel` | Túnel HTTPS con las URL de cada cosa |
+| `npm run infra:reset` | Borra volúmenes y rehace todo desde cero |
+
+**`infra:up` sondea con una conexión real, no mirando el puerto.** Durante la
+inicialización del clúster el puerto ya acepta TCP pero la base de datos rechaza
+sesiones; un sondeo de puerto daría por bueno algo que no lo está. Y comprueba
+las catorce tablas, la extensión pgvector y el índice HNSW: una migración que se
+marcó aplicada pero no creó lo que debía es un fallo que si no aparecería
+semanas después como un error de columna inexistente en mitad de una
+conversación.
+
+Colores ANSI nativos en vez de `chalk`: son doce constantes y no compensa un
+paquete más en el árbol. Respeta `NO_COLOR` y `isTTY`.
+
+#### Un detalle de plataforma que costó ver
+
+La primera versión usaba `shell: true` en `spawn` para que `docker compose`
+resolviera en Windows. Node 22 lo marca como deprecado —concatena los argumentos
+sin escaparlos— y además rompía la detección de «el ejecutable no existe»: con
+shell, un `docker` ausente devuelve un código de salida genérico en lugar de
+ENOENT, así que el script decía «docker compose devolvió 1» en lugar de «no se
+encontró docker». Ahora se nombra el `.cmd` explícitamente en Windows y no se usa
+shell.
+
 ### Estado de las pruebas
 
-`npm run typecheck` limpio. **184 pruebas en verde**, sin BD ni claves:
+`npm run typecheck` limpio. **189 pruebas en verde**, sin BD ni claves:
 
 | Bloque | Nº | Cubre |
 |---|---|---|
@@ -617,6 +679,52 @@ aquí porque es una trampa que vuelve a aparecer en cualquier repo con acentos.
 | Telemetría | 9 | Fire-and-forget, el agente sobrevive a la auditoría rota |
 | Autocrítica | 15 | Veredictos, reescritura, agotar intentos, coste acumulado |
 | Memoria y sub-agentes | 23 | Bloque de memoria, enum de delegación, aislamiento de herramientas |
+| Observador de trazas | 5 | Aviso síncrono, desenganche, un observador roto no tapa a otro |
+
+### Instrucciones para Noel — orden estricto del primer arranque
+
+```bash
+cd services/api
+npm install
+cp .env.staging.example .env
+#   ENCRYPTION_KEY  → openssl rand -base64 32   (32 bytes exactos o no arranca)
+#   API_KEY_PEPPER  → openssl rand -base64 32
+#   ANTHROPIC_API_KEY / OPENAI_API_KEY → las reales
+
+npm run infra:up          # ← esto aplica 002-006. No lances `migrate` a mano.
+```
+
+**Por qué el orden importa y qué no hacer:**
+
+1. **No edites una migración ya aplicada.** El runner las registra en
+   `schema_migrations` por nombre y no las vuelve a ejecutar. Cambiar el SQL de
+   la 003 después de aplicarla deja tu base de datos y el fichero contando cosas
+   distintas, y el siguiente que clone el repo tendrá un esquema que no coincide
+   con el tuyo. Si algo hay que corregir, va en una migración nueva.
+2. **Si una migración falla, no la relances a ciegas.** Cada una va en su
+   transacción, así que la que falló no dejó nada a medias — el error de pantalla
+   dice qué pasó y casi siempre es de configuración (`DATABASE_URL` apuntando al
+   puerto 5432 en vez del 5433, o la imagen de Postgres sin pgvector).
+3. **Para empezar de cero:** `npm run infra:reset` borra los volúmenes y rehace
+   todo. Es lo único que debe usarse para «reintentar»; borrar tablas a mano deja
+   `schema_migrations` mintiendo.
+4. **Puertos:** 5433 para Postgres y 6380 para Redis, a propósito, para no chocar
+   con los que ya tengas instalados.
+5. **Redis es opcional.** Si `REDIS_URL` está comentada, `infra:up` avisa y sigue:
+   solo se apaga la capa de mensajes proactivos.
+
+Después, para comprobar que el cerebro funciona de verdad:
+
+```bash
+npm run admin -- create-client casa-nigran "Casa de Nigrán"
+npm run admin -- autoconfig casa-nigran "Casa rural de 6 habitaciones en Nigrán…" --apply
+npm run admin -- embed-knowledge casa-nigran ../../knowledge_base/knowledge_base.json
+npm run chat -- casa-nigran
+```
+
+Ese `npm run chat` es la prueba de fuego: enseña en vivo el razonamiento, las
+llamadas a herramientas, la delegación y el veredicto del crítico. Es lo que
+convierte «las 189 pruebas pasan contra un mock» en «esto funciona».
 
 Las del agente corren el bucle completo contra un servidor que imita la API de
 Ollama, con guiones de varias vueltas: es la única forma de probar la parada,

@@ -1,7 +1,14 @@
 import './helpers/env.js';
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
-import { flushTraces, newRunId, pendingTraceCount, trace } from '../src/core/telemetry.js';
+import {
+  flushTraces,
+  newRunId,
+  observeTraces,
+  pendingTraceCount,
+  trace,
+  type TraceEntry,
+} from '../src/core/telemetry.js';
 import { runAgent } from '../src/core/agent.js';
 import type { RegisteredTool } from '../src/core/tools.js';
 import { FakeOllama } from './helpers/fake-ollama.js';
@@ -94,6 +101,82 @@ describe('trace — fire and forget', () => {
     const antes = Date.now();
     await flushTraces(3_000);
     assert.ok(Date.now() - antes < 100);
+  });
+});
+
+describe('observeTraces — el enganche del CLI de depuración', () => {
+  const entrada = (): TraceEntry => ({
+    conversationId: '00000000-0000-0000-0000-000000000001',
+    runId: newRunId(),
+    iteration: 0,
+    stepType: 'thought',
+    payload: { text: 'pensando' },
+  });
+
+  it('recibe las trazas en vivo', () => {
+    const vistas: TraceEntry[] = [];
+    const off = observeTraces((e) => vistas.push(e));
+
+    trace(entrada());
+
+    off();
+    assert.equal(vistas.length, 1);
+    assert.equal(vistas[0]!.stepType, 'thought');
+  });
+
+  it('avisa de forma síncrona, antes de que el INSERT termine', () => {
+    // Es lo que permite al CLI enseñar el razonamiento MIENTRAS ocurre. Si
+    // fuera asíncrono, la traza llegaría después de la respuesta y dejaría de
+    // servir para depurar.
+    let visto = false;
+    const off = observeTraces(() => {
+      visto = true;
+    });
+
+    trace(entrada());
+    assert.equal(visto, true, 'el observador corrió antes de devolver el control');
+    off();
+  });
+
+  it('la función que devuelve desengancha', () => {
+    const vistas: TraceEntry[] = [];
+    const off = observeTraces((e) => vistas.push(e));
+
+    trace(entrada());
+    off();
+    trace(entrada());
+
+    assert.equal(vistas.length, 1);
+  });
+
+  it('un observador que lanza no rompe el turno ni tapa a los demás', () => {
+    // Misma regla que rige la escritura: un observador que tira el sistema que
+    // observa está mal construido.
+    const vistas: TraceEntry[] = [];
+    const offMalo = observeTraces(() => {
+      throw new Error('observador roto');
+    });
+    const offBueno = observeTraces((e) => vistas.push(e));
+
+    assert.doesNotThrow(() => trace(entrada()));
+    assert.equal(vistas.length, 1, 'el segundo observador recibió la traza igual');
+
+    offMalo();
+    offBueno();
+  });
+
+  it('admite varios observadores a la vez', () => {
+    let a = 0;
+    let b = 0;
+    const offA = observeTraces(() => a++);
+    const offB = observeTraces(() => b++);
+
+    trace(entrada());
+
+    assert.equal(a, 1);
+    assert.equal(b, 1);
+    offA();
+    offB();
   });
 });
 

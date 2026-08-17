@@ -66,6 +66,46 @@ export function newRunId(): string {
   return randomUUID();
 }
 
+// ── Observadores en proceso ──────────────────────────────────────
+//
+// Las trazas van a Postgres, que sirve para auditar después pero no para mirar
+// lo que está pasando ahora. Un observador permite engancharse al flujo en vivo:
+// lo usa el CLI de depuración para enseñar el razonamiento del agente mientras
+// ocurre, sin sondear la base de datos ni esperar a que termine el turno.
+//
+// Las mismas dos reglas que rigen la escritura rigen aquí, y por eso los
+// observadores se llaman de forma síncrona y envueltos: si uno tarda, retrasa el
+// bucle; si uno lanza, se lo come este fichero. Un observador que tira el
+// sistema que observa está mal construido, igual que un INSERT que lo tira.
+
+export type TraceObserver = (entry: TraceEntry) => void;
+
+const observers = new Set<TraceObserver>();
+
+/**
+ * Se engancha al flujo de trazas. Devuelve la función para desengancharse.
+ *
+ * El observador debe ser rápido y no lanzar: se ejecuta en el camino crítico del
+ * bucle de razonamiento. Escribir por stdout vale; llamar a una API, no.
+ */
+export function observeTraces(observer: TraceObserver): () => void {
+  observers.add(observer);
+  return () => observers.delete(observer);
+}
+
+function notify(entry: TraceEntry): void {
+  for (const observer of observers) {
+    try {
+      observer(entry);
+    } catch (err) {
+      console.error(
+        '[telemetry] un observador lanzó; se ignora:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+}
+
 /**
  * Recorta el payload antes de guardarlo.
  *
@@ -123,6 +163,11 @@ async function write(entry: TraceEntry): Promise<void> {
  * bloquearse por la auditoría. El tipo de retorno es la documentación.
  */
 export function trace(entry: TraceEntry): void {
+  // Los observadores se avisan aunque la escritura esté desactivada: mirar en
+  // vivo y auditar después son cosas distintas, y apagar una no debe apagar la
+  // otra. El CLI de depuración funciona con TRACE_ENABLED=false.
+  notify(entry);
+
   if (!config.TRACE_ENABLED) return;
 
   const promise = write(entry).finally(() => inFlight.delete(promise));

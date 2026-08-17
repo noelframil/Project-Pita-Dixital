@@ -13,7 +13,12 @@
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "node --import tsx --test --test-concurrency=1 test/*.test.ts",
     "migrate": "tsx src/cli/migrate.ts",
-    "admin": "tsx src/cli/admin.ts"
+    "admin": "tsx src/cli/admin.ts",
+    "infra:up": "tsx scripts/infra-up.ts",
+    "infra:down": "docker compose -f ../../docker-compose.yml down",
+    "infra:reset": "docker compose -f ../../docker-compose.yml down -v && npm run infra:up",
+    "chat": "tsx scripts/chat-cli.ts",
+    "tunnel": "tsx scripts/tunnel.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
@@ -27,8 +32,10 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/localtunnel": "^2.0.4",
     "@types/node": "^22.10.2",
     "@types/pg": "^8.11.10",
+    "localtunnel": "^2.0.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
