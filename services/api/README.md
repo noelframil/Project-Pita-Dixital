@@ -40,7 +40,7 @@ npm run dev
 ## Pruebas
 
 ```bash
-npm test          # 108 pruebas con node --test, sin BD ni claves
+npm test          # 146 pruebas con node --test, sin BD ni claves
 npm run typecheck # cubre src/ y test/
 ```
 
@@ -227,6 +227,124 @@ por una cola con reintentos y backoff exponencial, y se firma con HMAC-SHA256
 sobre `timestamp.cuerpo`; la marca va *dentro* de la firma para que una entrega
 capturada no se pueda reenviar indefinidamente.
 
+## Trazabilidad del agente (LLMOps)
+
+`messages` guarda la conversación. Entre el mensaje del usuario y la respuesta
+puede haber cinco vueltas de razonamiento y varias llamadas a herramientas que
+esa tabla no deja ver, así que cada paso se registra en `agent_traces`.
+
+```sql
+-- Reconstruir un turno completo, en orden
+SELECT iteration, step_type, tool_name, latency_ms, tokens_used, payload
+  FROM agent_traces WHERE run_id = '...' ORDER BY iteration, created_at;
+
+-- ¿Qué herramienta falla más esta semana?
+SELECT tool_name, COUNT(*) FILTER (WHERE step_type = 'error') AS fallos, COUNT(*) AS total
+  FROM agent_traces
+ WHERE tool_name IS NOT NULL AND created_at > NOW() - INTERVAL '7 days'
+ GROUP BY tool_name ORDER BY fallos DESC;
+```
+
+Dos reglas que no se negocian:
+
+- **Nunca bloquea el bucle.** Las escrituras se disparan sin esperar. Un agente
+  de cinco vueltas haría cinco esperas a Postgres antes de contestar, y esa
+  latencia la paga el usuario para que nosotros tengamos datos. Por eso
+  `trace()` devuelve `void` y no una promesa: el tipo es la documentación.
+- **Nunca rompe el turno.** Si el `INSERT` falla, se grita por stdout y ya. Un
+  observador que tira el sistema que observa está mal construido.
+
+El precio es que las trazas pueden perderse o llegar desordenadas, así que el
+orden se reconstruye al leer con `(iteration, created_at)`, no se confía en el
+de inserción. `flushTraces()` espera a las que estén en vuelo al apagar.
+
+`agent_traces` es la tabla que más crece del esquema — varias filas por turno
+frente a dos de `messages`. `purgeOldTraces(dias)` existe para eso; conviene
+programarlo antes de que sea la tabla más grande y la más inútil.
+
+## Mensajes proactivos
+
+El bot puede escribir primero: recordar una cita, retomar tras una intervención
+humana.
+
+```bash
+# Programar
+curl -X POST http://localhost:3000/api/v1/proactive \
+  -H "authorization: Bearer pita_..." -H 'content-type: application/json' \
+  -d '{"session_id":"huesped_001","channel":"telegram",
+       "context_prompt":"Avisa de que su cita es mañana a las 10:00",
+       "send_at":"2026-08-18T08:00:00Z","dedupe_key":"cita-4471"}'
+
+# Devolver la conversación al bot tras atenderla una persona
+curl -X POST http://localhost:3000/api/v1/handoff/resolve \
+  -H "authorization: Bearer pita_..." -H 'content-type: application/json' \
+  -d '{"session_id":"huesped_001","channel":"telegram","note":"Reembolso hecho"}'
+```
+
+**`context_prompt` es una instrucción para el modelo, no el texto que se envía.**
+El mensaje lo redacta el bot con su voz y en el idioma en que venía hablando esa
+persona; un texto literal se saltaría la personalidad del cliente.
+
+Nadie ha pedido un mensaje proactivo, así que las razones para **no** enviarlo
+pesan más. Se salta —y queda registrado por qué— si la conversación está
+derivada a un humano, si la ventana de 24 h de Meta está cerrada, si no hay
+conversación previa, o si ya se mandó otro proactivo hace menos de seis horas.
+Saltar es un resultado normal, no un error: por eso no reintenta.
+
+Los endpoints exigen permisos propios (`handoff`, `proactive`), distintos del
+`chat`. Quien integra un widget reparte la clave del chat por el navegador; ese
+mismo token no puede poder programar mensajes a terceros.
+
+```bash
+npm run admin -- issue-key casa-nigran crm --scopes chat,handoff,proactive
+```
+
+### Por qué dos colas
+
+El aviso de handoff se encola en una **tabla de Postgres**; los proactivos en
+**Redis**. No es duplicación por descuido:
+
+- La cola de handoff se inserta *en la misma transacción* que el cambio de
+  estado de la conversación. Eso da una garantía que Redis no puede dar: es
+  imposible derivar a un humano y no encolar el aviso.
+- Los proactivos necesitan lo que Postgres hace mal: trabajos **retrasados**
+  («dentro de 23 horas»). En SQL eso es un sondeo constante sobre una tabla que
+  crece.
+
+Redis es **opcional**: sin `REDIS_URL` la capa proactiva se apaga y el resto
+arranca igual, para que `docker compose up -d` siga bastando para tocar un
+prompt.
+
+## Adaptación del formato al canal
+
+Los modelos escriben Markdown enriquecido. En un chat web se renderiza; en
+WhatsApp aparecen los asteriscos literales, y en SMS el ruido de puntuación
+cuenta para los 160 caracteres.
+
+| Canal | Qué hace |
+|---|---|
+| `web` | Nada: el cliente ya renderiza Markdown |
+| `whatsapp` | `**x**` → `*x*`, `*x*` → `_x_`, quita encabezados, aplana tablas y enlaces |
+| `telegram` | Conserva negritas, aplana tablas y listas anidadas |
+| `sms` | Quita todo el marcado; saltos estrictamente `\n`, sin líneas en blanco |
+| `voice` | Lo de SMS, más sustituir URL por una referencia hablada |
+
+Se podría pedir en el prompt «no uses Markdown» — se hace, y funciona a medias.
+El «casi siempre» es lo que llega al cliente, y esa instrucción compite por
+atención con las que sí importan. Una transformación determinista al final
+acierta el 100 % y no gasta un token.
+
+El caso que más cuesta: WhatsApp y Markdown usan el mismo carácter para cosas
+distintas (`*x*` es negrita allí y cursiva aquí), así que al convertir
+`**x**` → `*x*` la regla de cursiva vuelve a atrapar el asterisco recién creado.
+Como un `*` nuevo y uno original son indistinguibles, las negritas se apartan
+tras un marcador temporal hasta que la cursiva ha pasado.
+
+Se aplica en la ruta HTTP (`channel_type` en el body) y en los adaptadores de
+canal, **no** en un hook `onSend`: un hook recibe el cuerpo ya serializado y
+tendría que parsear el JSON, reescribir un campo y volver a serializarlo en cada
+respuesta, sin saber siquiera de qué canal se trata.
+
 ## Memoria de las conversaciones
 
 El historial se recorta por **presupuesto de tokens**
@@ -259,6 +377,8 @@ src/
   core/
     brain.ts           Orquestación: idéntica para todos los canales
     agent.ts           Bucle ReAct: piensa, actúa, evalúa, repite
+    telemetry.ts       Trazas del agente, sin esperar y sin poder romper el turno
+    proactive.ts       Redacción de mensajes que inicia el bot, con sus frenos
     prompt.ts          Compilación de plantilla en una pasada + lista blanca
     autoconfig.ts      Meta-prompting: descripción del negocio → bot_config validada
     tools.ts           Registro y ejecución de herramientas, con los controles de red
@@ -281,8 +401,16 @@ src/
     pricing.ts         Coste en micro-euros, enteros
   channels/
     types.ts           Interfaz ChannelAdapter + sobre unificado
+    outputFormatter.ts Adaptación del Markdown al canal, y troceado
+    outbound.ts        Envío saliente sin que haya entrado nada (proactivos)
     telegram.ts        Primer canal
-  routes/chat.ts       Endpoint del widget web
+  queue/
+    connection.ts      Redis para BullMQ. Opcional: sin él, se apaga la capa
+    proactive.ts       Cola y programación de trabajos retrasados
+    worker.ts          Consume la cola: redacta, comprueba y envía
+  routes/
+    chat.ts            Endpoint del widget web
+    handoff.ts         Reactivación tras handoff y disparadores proactivos
   lib/
     crypto.ts          Hash de claves de API, cifrado de credenciales de canal
     auth.ts            401 idéntico para clave inválida y cliente inactivo

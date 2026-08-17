@@ -3,8 +3,13 @@ import Fastify from 'fastify';
 import { config, isProd } from './config.js';
 import { pool } from './db.js';
 import { chatRoutes } from './routes/chat.js';
+import { handoffRoutes } from './routes/handoff.js';
 import { startTelegramPolling } from './channels/telegram.js';
 import { startHandoffWorker } from './core/handoff.js';
+import { flushTraces } from './core/telemetry.js';
+import { closeRedis } from './queue/connection.js';
+import { closeProactiveQueue } from './queue/proactive.js';
+import { startProactiveWorker } from './queue/worker.js';
 
 const app = Fastify({
   logger: {
@@ -55,18 +60,34 @@ app.get('/health', async () => {
 });
 
 await app.register(chatRoutes);
+await app.register(handoffRoutes);
 
 const stopTelegram = await startTelegramPolling(app.log);
 // Los avisos de handoff no se mandan dentro de la petición del usuario: si el
 // servidor del cliente tarda, el usuario se queda esperando. Van por una cola
 // con reintentos que trabaja este proceso.
 const stopHandoffWorker = startHandoffWorker(app.log);
+// Mensajes proactivos. Devuelve null si no hay REDIS_URL: esa capa es opcional
+// y su ausencia no impide que el resto del servicio funcione.
+const stopProactiveWorker = startProactiveWorker(app.log);
 
 const shutdown = async (signal: string) => {
   app.log.info(`${signal} recibido, cerrando`);
   stopTelegram();
   stopHandoffWorker();
+
+  // Se para de aceptar peticiones antes de cerrar nada más: si no, una petición
+  // en curso se encontraría el pool de Postgres cerrado a media respuesta.
   await app.close();
+
+  if (stopProactiveWorker) await stopProactiveWorker();
+  await closeProactiveQueue();
+  await closeRedis();
+
+  // Las trazas se escriben sin esperar. Aquí sí se espera: las del último turno
+  // son justo las que interesan cuando el proceso se cae por algo.
+  await flushTraces();
+
   await pool.end();
   process.exit(0);
 };

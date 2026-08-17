@@ -428,9 +428,91 @@ Y una corrección en `detectLoop`: comparaba incluyendo palabras vacías, con lo
 que «¿a qué hora abre la piscina?» y «¿a qué hora cierra la piscina?» salían
 como la misma pregunta. Ahora solo compara palabras con contenido.
 
+---
+
+### 2026-08-17 — Observabilidad, proactividad y adaptación al canal
+
+Tres capas nuevas. Como en la tanda anterior, una desviación de la
+especificación: se pedía relacionar `agent_traces` con `chat_logs` o `sessions`,
+y aquí la equivalencia es `conversations` (la sesión) y `messages` (los turnos).
+
+#### Observabilidad / LLMOps
+
+[migración 004](services/api/migrations/004_traces_and_proactive.sql) ·
+[core/telemetry.ts](services/api/src/core/telemetry.ts)
+
+Cada paso del razonamiento va a `agent_traces`: pensamiento, llamada, resultado
+y error, agrupados por `run_id`.
+
+- **Nunca bloquea el bucle.** `trace()` devuelve `void`, no una promesa, y es a
+  propósito: si devolviera una promesa, antes o después alguien le pondría un
+  `await` delante y el bucle empezaría a bloquearse por la auditoría. Un agente
+  de cinco vueltas haría cinco esperas a Postgres antes de contestar.
+- **Nunca rompe el turno.** El fallo va a stdout y ya. Hay prueba: la suite corre
+  *sin* Postgres, así que ahí todas las escrituras de traza fallan, y se
+  verifica que un turno completo del agente termina bien igualmente.
+- El precio: las trazas pueden perderse o desordenarse. Por eso el orden se
+  reconstruye al leer con `(iteration, created_at)`, y `flushTraces()` espera a
+  las que estén en vuelo al apagar el proceso.
+- Un fallo de herramienta se marca como `error` y no como `tool_result`: es lo
+  que se consulta al preguntar «¿qué se está rompiendo?», y el índice parcial lo
+  hace barato.
+
+#### Proactividad (BullMQ + Redis)
+
+[queue/](services/api/src/queue/) · [core/proactive.ts](services/api/src/core/proactive.ts) ·
+[routes/handoff.ts](services/api/src/routes/handoff.ts)
+
+- **`context_prompt` es una instrucción para el modelo, no el texto que se
+  envía.** El mensaje lo redacta el bot con su voz y en el idioma en que venía
+  hablando esa persona.
+- **Nadie ha pedido un mensaje proactivo**, así que casi todo el módulo son
+  comprobaciones previas: conversación en handoff, ventana de 24 h de Meta
+  cerrada, sin conversación previa, o demasiado pronto tras el anterior. Saltar
+  es un resultado normal y **no reintenta** — si reintentara, BullMQ repetiría
+  seis veces algo que va a dar el mismo resultado siempre.
+- **Se escribe en Postgres antes de encolar.** Si el proceso muere entre medias,
+  queda una fila `queued` visible y reparable en vez de un trabajo en Redis del
+  que no hay rastro. Un aviso que no sale y se ve es mejor que uno que sale y no
+  consta.
+- **Redis es opcional.** Sin `REDIS_URL` la capa se apaga y el resto arranca
+  igual: `docker compose up -d` tiene que seguir bastando para tocar un prompt.
+- **Permisos nuevos** (`handoff`, `proactive`) separados de `chat`: quien
+  integra un widget reparte la clave del chat por el navegador, y ese token no
+  puede poder programar mensajes a terceros.
+
+**Por qué ahora hay dos colas.** El aviso de handoff sigue en una tabla de
+Postgres y los proactivos van a Redis. No es descuido: la de handoff se inserta
+*en la misma transacción* que el cambio de estado, lo que hace imposible derivar
+sin avisar — garantía que Redis no puede dar. Los proactivos necesitan lo
+contrario: trabajos retrasados a 23 horas, que en SQL son un sondeo constante.
+
+#### Adaptación al canal
+
+[channels/outputFormatter.ts](services/api/src/channels/outputFormatter.ts)
+
+Markdown → formato del canal, con un formateador por destino. Se aplica en la
+ruta HTTP (`channel_type`) y en los adaptadores, **no** en un hook `onSend`: un
+hook recibe el cuerpo ya serializado y tendría que parsear el JSON, reescribir
+un campo y volver a serializarlo en cada respuesta, sin saber de qué canal se
+trata.
+
+Se podría pedir en el prompt «no uses Markdown» — se hace, y funciona a medias.
+El «casi siempre» es lo que llega al cliente.
+
+#### Un bug propio, y del tipo que avisas y cometes igual
+
+El formateador de WhatsApp convertía `**negrita** y *cursiva*` en
+`_negrita_ y _cursiva_`. Markdown y WhatsApp usan el mismo carácter para cosas
+distintas, así que al convertir `**x**` → `*x*` la regla de cursiva volvía a
+atrapar el asterisco recién creado. Había escrito el comentario advirtiendo del
+orden y aun así caí: no basta con ordenar, porque un `*` nuevo y uno original
+son indistinguibles. Ahora las negritas se apartan tras un marcador temporal
+hasta que la cursiva ha pasado.
+
 ### Estado de las pruebas
 
-`npm run typecheck` limpio. **108 pruebas en verde**, sin BD ni claves:
+`npm run typecheck` limpio. **146 pruebas en verde**, sin BD ni claves:
 
 | Bloque | Nº | Cubre |
 |---|---|---|
@@ -441,6 +523,8 @@ como la misma pregunta. Ahora solo compara palabras con contenido.
 | Agente ReAct | 11 | Parada, errores en cascada, deduplicación, handoff, paralelismo |
 | Multimodal | 17 | Firmas de fichero, validación previa, dispatcher |
 | Handoff y RAG | 22 | Bucles, firma HMAC, troceado, esquema de la herramienta |
+| Formateo de canal | 29 | WhatsApp, SMS, voz, tablas, troceado, casos límite |
+| Telemetría | 9 | Fire-and-forget, el agente sobrevive a la auditoría rota |
 
 Las del agente corren el bucle completo contra un servidor que imita la API de
 Ollama, con guiones de varias vueltas: es la única forma de probar la parada,
@@ -448,13 +532,17 @@ la reinyección de errores y la deduplicación sin gastar tokens.
 
 **Sin verificar, y conviene decirlo claro:**
 
-- **Las migraciones 002 y 003 no se han aplicado nunca.** No hay Docker ni
+- **Las migraciones 002, 003 y 004 no se han aplicado nunca.** No hay Docker ni
   Postgres en este entorno. El SQL está revisado a ojo, no ejecutado. La 003 es
   la de más riesgo: `CREATE EXTENSION vector` y el índice HNSW dependen de que
   la imagen de pgvector esté como se espera.
 - **Ninguna llamada real a un modelo, a Whisper, a visión ni a embeddings.** No
   hay claves en este entorno. El bucle del agente sí se ha probado entero, pero
   contra un servidor que imita a Ollama, no contra las APIs de verdad.
+- **BullMQ no ha procesado nunca un trabajo.** No hay Redis aquí. La cola, el
+  worker y los dos endpoints están escritos y tipados, pero el camino
+  encolar → esperar → redactar → enviar no se ha recorrido entero ni una vez.
+  Es lo menos probado de todo lo que va en la rama.
 - **El webhook de handoff no se ha entregado nunca a un receptor real.** La
   firma está probada contra su propia definición; falta verificarla desde el
   otro lado.
@@ -462,4 +550,4 @@ la reinyección de errores y la deduplicación sin gastar tokens.
   prompt que produce está por ver.
 
 Primera sesión con `docker compose up -d`, `npm run migrate` y claves reales
-debería centrarse exactamente en esos cuatro puntos.
+debería centrarse exactamente en esos cinco puntos, y empezar por BullMQ.

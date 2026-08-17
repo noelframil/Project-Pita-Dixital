@@ -3,7 +3,7 @@
  *
  *   npm run admin -- create-client <slug> "<Nombre>"
  *   npm run admin -- autoconfig <slug> "<descripción del negocio>" [opciones]
- *   npm run admin -- issue-key <slug> [etiqueta]
+ *   npm run admin -- issue-key <slug> [etiqueta] [--scopes chat,handoff,proactive]
  *   npm run admin -- link-telegram <slug> <bot-token>
  *   npm run admin -- import-knowledge <slug> <ruta.json>
  *   npm run admin -- list
@@ -41,7 +41,7 @@ function usage(): never {
 Uso:
   npm run admin -- create-client <slug> "<Nombre>"
   npm run admin -- autoconfig <slug> "<descripción del negocio>" [opciones]
-  npm run admin -- issue-key <slug> [etiqueta]
+  npm run admin -- issue-key <slug> [etiqueta] [--scopes chat,handoff,proactive]
   npm run admin -- link-telegram <slug> <bot-token>
   npm run admin -- import-knowledge <slug> <ruta.json>
   npm run admin -- embed-knowledge <slug> <ruta.md|.txt> [--source <ref>]
@@ -234,17 +234,35 @@ async function autoconfig(slug: string, brief: string, flags: Map<string, string
   console.log(`\nSiguiente paso:  npm run admin -- import-knowledge ${slug} <ruta.json>\n`);
 }
 
-async function issueKey(slug: string, label: string) {
+/** Permisos que se pueden emitir. Cada uno abre un endpoint distinto. */
+const SCOPES = ['chat', 'handoff', 'proactive'] as const;
+
+async function issueKey(slug: string, label: string, flags: Map<string, string>) {
   const clientId = await clientIdBySlug(slug);
   const key = generateApiKey();
 
+  // Por defecto solo 'chat'. Los otros dos permiten reabrir conversaciones y
+  // programar mensajes a terceros, y la clave del chat suele acabar repartida
+  // por el navegador de quien integra un widget en su web.
+  const scopes = (flags.get('scopes') ?? 'chat')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const invalidos = scopes.filter((s) => !SCOPES.includes(s as (typeof SCOPES)[number]));
+  if (invalidos.length > 0) {
+    console.error(`❌ Permisos desconocidos: ${invalidos.join(', ')}`);
+    console.error(`   Disponibles: ${SCOPES.join(', ')}`);
+    process.exit(1);
+  }
+
   await query(
     `INSERT INTO api_keys (client_id, prefix, key_hash, label, scopes)
-     VALUES ($1, $2, $3, $4, ARRAY['chat'])`,
-    [clientId, key.prefix, key.hash, label],
+     VALUES ($1, $2, $3, $4, $5)`,
+    [clientId, key.prefix, key.hash, label, scopes],
   );
 
-  console.log(`\n✅ Clave creada para "${slug}".`);
+  console.log(`\n✅ Clave creada para "${slug}" con permisos: ${scopes.join(', ')}.`);
   console.log('\n   ' + key.full);
   console.log('\n⚠️  Cópiala ahora. En la base de datos solo queda el hash: no hay forma de');
   console.log('   recuperarla. Si se pierde, se revoca y se emite otra.\n');
@@ -534,7 +552,7 @@ try {
       break;
     case 'issue-key':
       if (args.length < 1) usage();
-      await issueKey(args[0]!, args[1] ?? 'default');
+      await issueKey(args[0]!, args[1] ?? 'default', flags);
       break;
     case 'link-telegram':
       if (args.length < 2) usage();

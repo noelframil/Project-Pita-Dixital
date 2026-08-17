@@ -156,14 +156,20 @@ export async function recordMessage(params: {
   sourceKind?: 'text' | 'audio' | 'image';
   /** Coste de transcribir o describir, aparte del turno de chat. */
   mediaCostMicros?: number | null;
-}): Promise<void> {
-  await query(
+  /**
+   * De dónde salió: respuesta a un mensaje, aviso proactivo o nota del sistema.
+   * Sin esto, un recordatorio automático y una respuesta son indistinguibles.
+   */
+  origin?: 'reply' | 'proactive' | 'handoff_notice';
+}): Promise<string | null> {
+  const rows = await query<{ id: string }>(
     `INSERT INTO messages
        (conversation_id, role, text, provider_msg_id, model,
         tokens_prompt, tokens_completion, cost_micros, latency_ms,
-        source_kind, media_cost_micros)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-     ON CONFLICT (provider_msg_id) WHERE provider_msg_id IS NOT NULL DO NOTHING`,
+        source_kind, media_cost_micros, origin)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+     ON CONFLICT (provider_msg_id) WHERE provider_msg_id IS NOT NULL DO NOTHING
+     RETURNING id`,
     [
       params.conversationId,
       params.role,
@@ -176,8 +182,13 @@ export async function recordMessage(params: {
       params.latencyMs ?? null,
       params.sourceKind ?? 'text',
       params.mediaCostMicros ?? null,
+      params.origin ?? 'reply',
     ],
   );
+
+  // Null cuando el ON CONFLICT descartó la fila por idempotencia: el mensaje ya
+  // estaba, no es un error.
+  return rows[0]?.id ?? null;
 }
 
 /**

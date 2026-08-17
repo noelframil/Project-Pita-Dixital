@@ -7,6 +7,7 @@ import { checkRateLimit } from '../lib/rateLimit.js';
 import { LlmError } from '../llm/index.js';
 import { ingest } from '../media/ingest.js';
 import { MediaError, type MediaInput } from '../media/types.js';
+import { formatForChannel, type ChannelType } from '../channels/outputFormatter.js';
 
 const ChatBody = z.object({
   session_id: z
@@ -17,6 +18,12 @@ const ChatBody = z.object({
   message: z.string().min(1).max(config.MAX_MESSAGE_CHARS),
   display_name: z.string().max(120).optional(),
   override_variables: z.record(z.union([z.string(), z.number(), z.boolean()])).default({}),
+  /**
+   * Dónde se va a pintar la respuesta. No cambia la conversación —el canal
+   * sigue siendo 'web'—, solo el formato de salida: quien integra este endpoint
+   * en una pasarela de WhatsApp o de SMS necesita texto adaptado, no Markdown.
+   */
+  channel_type: z.enum(['web', 'whatsapp', 'telegram', 'sms', 'voice']).default('web'),
 });
 
 /**
@@ -27,6 +34,9 @@ const ChatBody = z.object({
 const MultipartFields = ChatBody.extend({
   message: z.string().max(config.MAX_MESSAGE_CHARS).optional(),
   override_variables: z.string().optional(),
+  // En multipart todo llega como cadena, así que el valor por defecto se
+  // aplica cuando el campo no viene.
+  channel_type: z.enum(['web', 'whatsapp', 'telegram', 'sms', 'voice']).default('web'),
 });
 
 interface ParsedRequest {
@@ -35,6 +45,7 @@ interface ParsedRequest {
   displayName?: string;
   overrideVariables: Record<string, unknown>;
   media: MediaInput[];
+  channelType: ChannelType;
 }
 
 export async function chatRoutes(app: FastifyInstance) {
@@ -134,7 +145,12 @@ export async function chatRoutes(app: FastifyInstance) {
       return reply.send({
         status: result.stopReason === 'handoff' ? 'handoff_requested' : 'success',
         data: {
-          reply: result.reply,
+          // Última parada antes de salir: el Markdown del modelo se adapta al
+          // canal donde se va a pintar. Se hace aquí y no en un hook `onSend`
+          // porque un hook recibe el cuerpo ya serializado y tendría que
+          // parsear el JSON, reescribir un campo y volver a serializarlo —
+          // trabajo extra en cada respuesta para no saber siquiera qué canal es.
+          reply: formatForChannel(result.reply, parsed.channelType),
           session_id: parsed.sessionId,
           model: result.model,
           usage: {
@@ -180,6 +196,7 @@ function parseJson(request: FastifyRequest): ParsedRequest {
     displayName: body.display_name,
     overrideVariables: body.override_variables,
     media: [],
+    channelType: body.channel_type,
   };
 }
 
@@ -231,6 +248,7 @@ async function parseMultipart(request: FastifyRequest): Promise<ParsedRequest> {
     message: fields.message,
     display_name: fields.display_name,
     override_variables: fields.override_variables,
+    ...(fields.channel_type && { channel_type: fields.channel_type }),
   });
 
   let overrideVariables: Record<string, unknown> = {};
@@ -254,5 +272,6 @@ async function parseMultipart(request: FastifyRequest): Promise<ParsedRequest> {
     displayName: parsedFields.display_name,
     overrideVariables,
     media,
+    channelType: parsedFields.channel_type,
   };
 }

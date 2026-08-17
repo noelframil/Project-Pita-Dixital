@@ -34,6 +34,7 @@ import { config } from '../config.js';
 import { complete, type ChatMessage, type ToolCall, type ToolSpec } from '../llm/index.js';
 import { executeTool, recordInvocation, type RegisteredTool } from './tools.js';
 import { HANDOFF_TOOL_NAME } from './handoff.js';
+import { newRunId, trace } from './telemetry.js';
 
 /**
  * Directrices ReAct que se anexan al prompt del sistema cuando el cliente tiene
@@ -86,6 +87,8 @@ export type AgentStopReason =
 export interface AgentRunResult {
   text: string;
   model: string;
+  /** Identificador del turno. Cruza el resultado con las filas de `agent_traces`. */
+  runId: string;
   steps: AgentStep[];
   stopReason: AgentStopReason;
   /** Mensajes generados dentro del turno, para reconstruir el hilo si hace falta. */
@@ -110,6 +113,8 @@ export interface AgentRunOptions {
   /** Herramientas del sistema sin ejecución propia, como `escalar_a_humano`. */
   builtinTools?: ToolSpec[];
   conversationId: string;
+  /** Reutiliza un identificador de turno existente. Si falta, se genera uno. */
+  runId?: string;
 }
 
 /**
@@ -120,6 +125,9 @@ export interface AgentRunOptions {
  * solo y quien llama debe traducir a un 502.
  */
 export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
+  // El identificador del turno se genera aquí, antes de la primera fila: las
+  // trazas se escriben sin esperar, así que no puede venir de la base de datos.
+  const runId = opts.runId ?? newRunId();
   const byName = new Map(opts.tools.map((t) => [t.name, t]));
   const toolSpecs: ToolSpec[] = [
     ...opts.tools.map((t) => ({
@@ -154,22 +162,62 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
   for (let iteration = 0; iteration < maxRounds; iteration++) {
     const isLastRound = iteration === maxRounds - 1;
     const offerTools = toolSpecs.length > 0 && !isLastRound;
+    const roundStarted = Date.now();
 
-    const result = await complete(opts.provider, {
-      model: opts.model,
-      system: opts.system,
-      messages,
-      temperature: opts.temperature,
-      maxTokens: opts.maxTokens,
-      signal: AbortSignal.timeout(config.LLM_TIMEOUT_MS),
-      ...(offerTools && { tools: toolSpecs }),
-    });
+    let result;
+    try {
+      result = await complete(opts.provider, {
+        model: opts.model,
+        system: opts.system,
+        messages,
+        temperature: opts.temperature,
+        maxTokens: opts.maxTokens,
+        signal: AbortSignal.timeout(config.LLM_TIMEOUT_MS),
+        ...(offerTools && { tools: toolSpecs }),
+      });
+    } catch (err) {
+      // El fallo del proveedor sí sube: de esto el agente no puede recuperarse
+      // solo. Pero se deja constancia antes de propagarlo, que es justo el caso
+      // en que una traza vale más — un turno que no llegó a existir.
+      trace({
+        conversationId: opts.conversationId,
+        runId,
+        iteration,
+        stepType: 'error',
+        payload: {
+          scope: 'model_provider',
+          message: err instanceof Error ? err.message : String(err),
+        },
+        latencyMs: Date.now() - roundStarted,
+      });
+      throw err;
+    }
+
+    const roundLatency = Date.now() - roundStarted;
 
     promptTokens += result.promptTokens;
     completionTokens += result.completionTokens;
     costMicros += result.costMicros;
     text = result.text;
     model = result.model;
+
+    // El razonamiento de esta vuelta. Se registra siempre, pida herramientas o
+    // no: es lo que explica por qué el agente hizo lo que hizo.
+    trace({
+      conversationId: opts.conversationId,
+      runId,
+      iteration,
+      stepType: 'thought',
+      payload: {
+        text: result.text,
+        model: result.model,
+        finish_reason: result.finishReason,
+        tools_offered: offerTools ? toolSpecs.map((t) => t.name) : [],
+        tool_calls_requested: result.toolCalls.map((c) => c.name),
+      },
+      latencyMs: roundLatency,
+      tokensUsed: result.promptTokens + result.completionTokens,
+    });
 
     if (result.toolCalls.length === 0) {
       steps.push({
@@ -215,8 +263,30 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
         },
       });
       toolsUsed.push(HANDOFF_TOOL_NAME);
+      trace({
+        conversationId: opts.conversationId,
+        runId,
+        iteration,
+        stepType: 'tool_call',
+        toolName: HANDOFF_TOOL_NAME,
+        payload: { ...handoff, stop: 'el bucle corta aquí' },
+      });
       stopReason = 'handoff';
       break;
+    }
+
+    // Cada llamada solicitada, antes de ejecutarla. Se registra aquí y no
+    // después para que quede constancia aunque la ejecución se cuelgue o el
+    // proceso muera a mitad.
+    for (const call of result.toolCalls) {
+      trace({
+        conversationId: opts.conversationId,
+        runId,
+        iteration,
+        stepType: 'tool_call',
+        toolName: call.name,
+        payload: { tool_call_id: call.id, input: call.input },
+      });
     }
 
     // ── Ejecución en paralelo ───────────────────────────────────
@@ -235,6 +305,19 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
         toolName,
         content,
         isError,
+        latencyMs,
+      });
+
+      trace({
+        conversationId: opts.conversationId,
+        runId,
+        iteration,
+        // Un fallo de herramienta se marca como 'error' y no como 'tool_result':
+        // es lo que se consulta al preguntar "¿qué se está rompiendo?", y el
+        // índice parcial sobre step_type = 'error' lo hace barato.
+        stepType: isError ? 'error' : 'tool_result',
+        toolName,
+        payload: { tool_call_id: call.id, output: content, is_error: isError },
         latencyMs,
       });
 
@@ -258,9 +341,27 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
     if (isLastRound) stopReason = 'max_iterations';
   }
 
+  if (stopReason === 'max_iterations') {
+    // Agotar las vueltas no es un fallo del sistema, pero sí una señal: o el
+    // presupuesto se quedó corto, o el modelo se atascó. Vale la pena poder
+    // contar cuántas veces pasa sin releer conversaciones.
+    trace({
+      conversationId: opts.conversationId,
+      runId,
+      iteration: maxRounds - 1,
+      stepType: 'error',
+      payload: {
+        scope: 'max_iterations',
+        max_iterations: opts.maxIterations,
+        tools_used: toolsUsed,
+      },
+    });
+  }
+
   return {
     text,
     model,
+    runId,
     steps,
     stopReason,
     transcript,

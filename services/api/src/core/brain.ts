@@ -6,6 +6,7 @@ import { buildContextBlock, compileTemplate, mergeVariables } from './prompt.js'
 import { findRelevantKnowledge } from './rag.js';
 import { buildSummaryBlock, summarize, trimToBudget } from './memory.js';
 import { loadTools } from './tools.js';
+import { linkRunToMessage } from './telemetry.js';
 import {
   HANDOFF_PROMPT_BLOCK,
   HANDOFF_TOOL,
@@ -265,7 +266,7 @@ export async function think(req: ThinkRequest): Promise<ThinkResult> {
   const latencyMs = Date.now() - started;
   const reply = run.text.trim() || FALLBACK_REPLY;
 
-  await recordMessage({
+  const messageId = await recordMessage({
     conversationId: conversation.id,
     role: 'assistant',
     text: reply,
@@ -275,6 +276,10 @@ export async function think(req: ThinkRequest): Promise<ThinkResult> {
     costMicros: run.costMicros,
     latencyMs,
   });
+
+  // Las trazas del turno se enlazan con el mensaje que lo cerró. Va al final
+  // porque el `message_id` no existe hasta ahora, y sin esperar: es auditoría.
+  if (messageId) linkRunToMessage(run.runId, messageId);
 
   return {
     reply,

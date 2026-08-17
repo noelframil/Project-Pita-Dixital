@@ -82,6 +82,32 @@ const schema = z.object({
   HANDOFF_WEBHOOK_TIMEOUT_MS: z.coerce.number().int().default(10_000),
   HANDOFF_MAX_ATTEMPTS: z.coerce.number().int().default(6),
   HANDOFF_POLL_MS: z.coerce.number().int().default(15_000),
+
+  // ── Trazabilidad del agente (LLMOps) ────────────────────────
+  TRACE_ENABLED: z
+    .string()
+    .default('true')
+    .transform((v) => v !== 'false' && v !== '0'),
+  // El resultado de una herramienta puede ser un JSON de megabytes. Para
+  // auditar basta el principio; lo completo ya está en tool_invocations.
+  TRACE_MAX_PAYLOAD_CHARS: z.coerce.number().int().default(4_000),
+
+  // ── Cola de mensajes proactivos ─────────────────────────────
+  // Opcional: sin REDIS_URL la capa proactiva se apaga y el resto arranca igual.
+  // El flujo de desarrollo por defecto (docker compose = solo Postgres) sigue
+  // funcionando sin montar un Redis para tocar un prompt.
+  REDIS_URL: z.string().optional(),
+  PROACTIVE_CONCURRENCY: z.coerce.number().int().default(2),
+  // Tope por minuto. Una tanda de mil recordatorios no puede agotar el rate
+  // limit del proveedor y dejar sin servicio a quien está esperando en vivo.
+  PROACTIVE_RATE_MAX: z.coerce.number().int().default(30),
+  PROACTIVE_MAX_ATTEMPTS: z.coerce.number().int().default(4),
+  PROACTIVE_MAX_TOKENS: z.coerce.number().int().default(300),
+  // Descanso mínimo entre proactivos al mismo contacto: 6 h.
+  PROACTIVE_MIN_GAP_MS: z.coerce.number().int().default(6 * 3600 * 1000),
+  // Tope de programación: 30 días. Más allá, el contexto de la conversación ya
+  // no se parece en nada al de ahora y el mensaje llegaría descolocado.
+  PROACTIVE_MAX_DELAY_MS: z.coerce.number().int().default(30 * 86_400_000),
 });
 
 const parsed = schema.safeParse(process.env);

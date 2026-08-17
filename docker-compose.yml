@@ -19,5 +19,26 @@ services:
       timeout: 3s
       retries: 10
 
+  redis:
+    # Cola de mensajes proactivos (BullMQ). Es OPCIONAL: sin REDIS_URL en el
+    # .env, esa capa se apaga y el resto del servicio arranca igual. Si solo
+    # vas a tocar prompts o el RAG, no hace falta levantarlo.
+    image: redis:7-alpine
+    container_name: pita-redis
+    restart: unless-stopped
+    # appendonly: un trabajo programado para dentro de 23 horas no puede
+    # perderse porque se reinicie el contenedor.
+    command: redis-server --appendonly yes
+    ports:
+      - "6380:6379"   # 6380 para no chocar con un Redis local
+    volumes:
+      - pita_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   pita_pgdata:
+  pita_redisdata:
