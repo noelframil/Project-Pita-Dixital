@@ -2,6 +2,7 @@
  * CLI de administración.
  *
  *   npm run admin -- create-client <slug> "<Nombre>"
+ *   npm run admin -- autoconfig <slug> "<descripción del negocio>" [opciones]
  *   npm run admin -- issue-key <slug> [etiqueta]
  *   npm run admin -- link-telegram <slug> <bot-token>
  *   npm run admin -- import-knowledge <slug> <ruta.json>
@@ -10,6 +11,13 @@
 import { readFile } from 'node:fs/promises';
 import { pool, query, queryOne } from '../db.js';
 import { encryptJson, generateApiKey } from '../lib/crypto.js';
+import { AutoconfigError, generateBotBlueprint } from '../core/autoconfig.js';
+import {
+  TOOL_NAME_PATTERN,
+  ToolConfigError,
+  validateHttpToolConfig,
+  type HttpToolConfig,
+} from '../core/tools.js';
 
 const PITA_TOLA_PROMPT = `Eres "{{assistant_name}}" (también conocida como "Pita Tola"), la asistente digital de {{business_name}}, en {{location}}.
 
@@ -28,12 +36,51 @@ function usage(): never {
   console.log(`
 Uso:
   npm run admin -- create-client <slug> "<Nombre>"
+  npm run admin -- autoconfig <slug> "<descripción del negocio>" [opciones]
   npm run admin -- issue-key <slug> [etiqueta]
   npm run admin -- link-telegram <slug> <bot-token>
   npm run admin -- import-knowledge <slug> <ruta.json>
+  npm run admin -- add-tool <slug> <ruta.json>
+  npm run admin -- list-tools <slug>
+  npm run admin -- remove-tool <slug> <nombre>
   npm run admin -- list
+
+Opciones de autoconfig:
+  --apply                  Guarda el resultado. Sin esto solo enseña la vista previa.
+  --provider <nombre>      anthropic | openai | ollama
+  --model <id>
+  --allow-override a,b     Variables que el cliente podrá sobrescribir por petición.
+                           Vacío por defecto, a propósito.
 `);
   process.exit(1);
+}
+
+/** Extrae --clave valor de argv y devuelve el resto como posicionales. */
+function parseFlags(argv: string[]): { positional: string[]; flags: Map<string, string> } {
+  const positional: string[] = [];
+  const flags = new Map<string, string>();
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!;
+    if (!arg.startsWith('--')) {
+      positional.push(arg);
+      continue;
+    }
+    const name = arg.slice(2);
+    // --apply no lleva valor; el resto sí.
+    if (name === 'apply') {
+      flags.set(name, 'true');
+      continue;
+    }
+    const value = argv[++i];
+    if (value === undefined) {
+      console.error(`❌ A la opción --${name} le falta el valor.`);
+      process.exit(1);
+    }
+    flags.set(name, value);
+  }
+
+  return { positional, flags };
 }
 
 async function clientIdBySlug(slug: string): Promise<string> {
@@ -81,6 +128,104 @@ async function createClient(slug: string, name: string) {
   console.log(`✅ Cliente creado: ${name} (${slug})`);
   console.log(`   id: ${clientId}`);
   console.log(`\nSiguiente paso:  npm run admin -- issue-key ${slug}`);
+}
+
+/**
+ * Fase 1 — genera la configuración del bot a partir de una descripción y, si se
+ * pide, la guarda.
+ *
+ * Por defecto no escribe nada. Un prompt del sistema es lo que ese cliente va a
+ * decirle a sus huéspedes durante meses: se lee antes de guardarlo.
+ */
+async function autoconfig(slug: string, brief: string, flags: Map<string, string>) {
+  const clientId = await clientIdBySlug(slug);
+  const apply = flags.get('apply') === 'true';
+
+  const requestedOverrides = (flags.get('allow-override') ?? '')
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+
+  console.log(`\n⏳ Generando la configuración de "${slug}"…`);
+  console.log(`   proveedor: ${flags.get('provider') ?? '(por defecto)'}`);
+
+  const blueprint = await generateBotBlueprint(brief, {
+    provider: flags.get('provider'),
+    model: flags.get('model'),
+  });
+
+  // El operador solo puede aprobar variables que existan; una que no exista
+  // dejaría la lista blanca apuntando al vacío y el override se descartaría
+  // en silencio en cada petición.
+  const unknown = requestedOverrides.filter((v) => !(v in blueprint.variables));
+  if (unknown.length > 0) {
+    console.error(
+      `\n❌ Estas variables de --allow-override no existen en la configuración: ${unknown.join(', ')}`,
+    );
+    console.error(`   Disponibles: ${Object.keys(blueprint.variables).join(', ')}`);
+    process.exit(1);
+  }
+
+  console.log(`\n${'═'.repeat(72)}`);
+  console.log(`ASISTENTE: ${blueprint.assistantName}`);
+  console.log('═'.repeat(72));
+
+  console.log('\n── Prompt compilado, tal como lo verá el modelo ──\n');
+  console.log(blueprint.preview);
+
+  console.log(`\n── Variables (${Object.keys(blueprint.variables).length}) ──\n`);
+  for (const [key, value] of Object.entries(blueprint.variables)) {
+    const shown = value.length > 70 ? `${value.slice(0, 67)}…` : value;
+    console.log(`  ${key.padEnd(24)} ${shown}`);
+  }
+
+  if (blueprint.unusedVariables.length > 0) {
+    console.log(`\n⚠️  Declaradas pero no usadas: ${blueprint.unusedVariables.join(', ')}`);
+  }
+
+  console.log('\n── Revisión pendiente ──\n');
+  console.log(`  ${blueprint.notes}`);
+
+  console.log('\n── Sobrescribibles desde la petición ──\n');
+  if (blueprint.suggestedOverrideVars.length > 0) {
+    console.log(`  Propuesta del modelo: ${blueprint.suggestedOverrideVars.join(', ')}`);
+  } else {
+    console.log('  El modelo no propuso ninguna.');
+  }
+  console.log(
+    `  Se van a guardar:     ${requestedOverrides.length > 0 ? requestedOverrides.join(', ') : '(ninguna)'}`,
+  );
+  if (requestedOverrides.length === 0 && blueprint.suggestedOverrideVars.length > 0) {
+    console.log(
+      '\n  La propuesta no se aplica sola. Quien tenga la clave de API puede reescribir\n' +
+        '  cualquier variable de esta lista en cada mensaje, así que la apruebas tú:\n' +
+        `    --allow-override ${blueprint.suggestedOverrideVars.join(',')}`,
+    );
+  }
+
+  const cost = (blueprint.usage.costMicros / 1_000_000).toFixed(4);
+  console.log(
+    `\n── Coste: ${blueprint.usage.promptTokens} + ${blueprint.usage.completionTokens} tokens ≈ ${cost} €\n`,
+  );
+
+  if (!apply) {
+    console.log('ℹ️  Vista previa. Añade --apply para guardarlo en la base de datos.\n');
+    return;
+  }
+
+  await query(
+    `INSERT INTO bot_configs
+       (client_id, name, system_prompt_template, dynamic_variables, allowed_override_vars)
+     VALUES ($1, 'default', $2, $3, $4)
+     ON CONFLICT (client_id, name)
+       DO UPDATE SET system_prompt_template = EXCLUDED.system_prompt_template,
+                     dynamic_variables      = EXCLUDED.dynamic_variables,
+                     allowed_override_vars  = EXCLUDED.allowed_override_vars`,
+    [clientId, blueprint.systemPromptTemplate, JSON.stringify(blueprint.variables), requestedOverrides],
+  );
+
+  console.log(`✅ Configuración guardada para "${slug}".`);
+  console.log(`\nSiguiente paso:  npm run admin -- import-knowledge ${slug} <ruta.json>\n`);
 }
 
 async function issueKey(slug: string, label: string) {
@@ -158,6 +303,97 @@ async function importKnowledge(slug: string, path: string) {
   console.log(`✅ ${entries.length} entradas importadas para "${slug}".`);
 }
 
+// ── Fase 3: herramientas ─────────────────────────────────────────
+
+interface ToolDefinitionFile {
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+  http: HttpToolConfig;
+}
+
+/**
+ * Alta desde un fichero JSON en vez de por argumentos: una herramienta lleva
+ * esquema de entrada y cabeceras, y eso no cabe en una línea de comandos sin
+ * volverse ilegible. Además el fichero se puede versionar aparte del secreto.
+ */
+async function addTool(slug: string, path: string) {
+  const clientId = await clientIdBySlug(slug);
+  const def = JSON.parse(await readFile(path, 'utf8')) as ToolDefinitionFile;
+
+  if (!TOOL_NAME_PATTERN.test(def.name ?? '')) {
+    console.error(
+      `❌ El nombre "${def.name}" no vale. Los proveedores exigen ^[a-z][a-z0-9_]{0,63}$.`,
+    );
+    process.exit(1);
+  }
+  if (!def.description?.trim()) {
+    console.error(
+      '❌ Falta la descripción. Es lo único con lo que el modelo decide si llamar a esto ' +
+        'o no, así que escribe cuándo usarla, no solo qué hace.',
+    );
+    process.exit(1);
+  }
+  if (!def.input_schema || typeof def.input_schema !== 'object') {
+    console.error('❌ Falta input_schema (JSON Schema del objeto de entrada).');
+    process.exit(1);
+  }
+
+  // Revienta aquí, mientras hay un humano delante que puede corregirlo, y no a
+  // mitad de una conversación con un huésped.
+  validateHttpToolConfig(def.http);
+
+  await query(
+    `INSERT INTO tools (client_id, name, description, input_schema, kind, config)
+     VALUES ($1, $2, $3, $4, 'http', $5)
+     ON CONFLICT (client_id, name)
+       DO UPDATE SET description  = EXCLUDED.description,
+                     input_schema = EXCLUDED.input_schema,
+                     config       = EXCLUDED.config,
+                     is_active    = TRUE`,
+    [clientId, def.name, def.description, JSON.stringify(def.input_schema), encryptJson(def.http)],
+  );
+
+  console.log(`✅ Herramienta "${def.name}" registrada para "${slug}".`);
+  console.log(`   ${def.http.method} ${new URL(def.http.url).origin}`);
+  console.log('\n   Las cabeceras y la URL van cifradas: el modelo solo ve nombre,');
+  console.log('   descripción y esquema de entrada.\n');
+}
+
+async function listTools(slug: string) {
+  const clientId = await clientIdBySlug(slug);
+  const rows = await query<{ name: string; description: string; is_active: boolean }>(
+    `SELECT name, description, is_active FROM tools WHERE client_id = $1 ORDER BY name`,
+    [clientId],
+  );
+
+  if (rows.length === 0) {
+    console.log(`Sin herramientas en "${slug}". Añade una con: add-tool ${slug} <ruta.json>`);
+    return;
+  }
+
+  for (const r of rows) {
+    const estado = r.is_active ? '●' : '○';
+    console.log(`${estado} ${r.name}\n    ${r.description}\n`);
+  }
+}
+
+async function removeTool(slug: string, name: string) {
+  const clientId = await clientIdBySlug(slug);
+  // Baja lógica: las filas de tool_invocations la referencian y su histórico
+  // de costes y errores sigue siendo útil después de retirarla.
+  const rows = await query(
+    `UPDATE tools SET is_active = FALSE WHERE client_id = $1 AND name = $2 RETURNING id`,
+    [clientId, name],
+  );
+
+  if (rows.length === 0) {
+    console.error(`❌ "${slug}" no tiene ninguna herramienta llamada "${name}".`);
+    process.exit(1);
+  }
+  console.log(`✅ Herramienta "${name}" desactivada. El histórico de llamadas se conserva.`);
+}
+
 async function list() {
   const rows = await query<{
     slug: string;
@@ -194,13 +430,18 @@ async function list() {
   );
 }
 
-const [command, ...args] = process.argv.slice(2);
+const [command, ...rawArgs] = process.argv.slice(2);
+const { positional: args, flags } = parseFlags(rawArgs);
 
 try {
   switch (command) {
     case 'create-client':
       if (args.length < 2) usage();
       await createClient(args[0]!, args[1]!);
+      break;
+    case 'autoconfig':
+      if (args.length < 2) usage();
+      await autoconfig(args[0]!, args[1]!, flags);
       break;
     case 'issue-key':
       if (args.length < 1) usage();
@@ -214,11 +455,32 @@ try {
       if (args.length < 2) usage();
       await importKnowledge(args[0]!, args[1]!);
       break;
+    case 'add-tool':
+      if (args.length < 2) usage();
+      await addTool(args[0]!, args[1]!);
+      break;
+    case 'list-tools':
+      if (args.length < 1) usage();
+      await listTools(args[0]!);
+      break;
+    case 'remove-tool':
+      if (args.length < 2) usage();
+      await removeTool(args[0]!, args[1]!);
+      break;
     case 'list':
       await list();
       break;
     default:
       usage();
+  }
+} catch (err) {
+  // Un fallo de generación es una condición esperada, no un bug: el mensaje
+  // dice qué incumplió la plantilla. La traza no aporta nada aquí.
+  if (err instanceof AutoconfigError || err instanceof ToolConfigError) {
+    console.error(`\n❌ ${err.message}\n`);
+    process.exitCode = 1;
+  } else {
+    throw err;
   }
 } finally {
   await pool.end();

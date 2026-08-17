@@ -9,6 +9,10 @@ export interface Conversation {
   id: string;
   contact_id: string | null;
   status: string;
+  /** Resumen acumulado de la parte antigua. Null mientras nada se haya recortado. */
+  summary: string | null;
+  /** Marca de agua: lo anterior a esta fecha ya vive dentro de `summary`. */
+  summarized_until: Date | null;
 }
 
 /**
@@ -57,7 +61,7 @@ export async function resolveConversation(params: {
        VALUES ($1, $2, $3, $4, $5, NOW())
        ON CONFLICT (client_id, channel, thread_ref)
          DO UPDATE SET last_message_at = NOW()
-       RETURNING id, contact_id, status`,
+       RETURNING id, contact_id, status, summary, summarized_until`,
       [
         params.clientId,
         contactId,
@@ -72,24 +76,70 @@ export async function resolveConversation(params: {
 }
 
 /**
- * Últimos N turnos, en orden cronológico. Se piden invertidos y se le da la
+ * Un mensaje del historial con su fecha.
+ *
+ * La fecha viaja al lado y no dentro de `ChatMessage` porque `ChatMessage` es lo
+ * que se le manda al proveedor, y ahí no pinta nada. Aquí hace falta para saber
+ * exactamente hasta dónde llega el resumen.
+ */
+export interface HistoryEntry {
+  message: ChatMessage;
+  createdAt: Date;
+}
+
+/**
+ * Historial sin resumir, en orden cronológico. Se piden invertidos y se le da la
  * vuelta: así el índice (conversation_id, created_at DESC) sirve directamente.
+ *
+ * `since` es la marca de agua del resumen: lo anterior ya está condensado en
+ * `conversations.summary` y traerlo otra vez sería contarlo dos veces.
+ *
+ * `turns` deja de ser el recorte fino — de eso se encarga el presupuesto de
+ * tokens en `memory.ts` — y pasa a ser el tope de lo que se lee de la base de
+ * datos, para que una conversación de mil mensajes no se traiga entera.
+ *
+ * Los mensajes con rol `tool` quedan fuera a propósito: ver la nota sobre el
+ * alcance del bucle de herramientas en `brain.ts`.
  */
 export async function loadHistory(
   conversationId: string,
   turns: number,
-): Promise<ChatMessage[]> {
-  const rows = await query<{ role: string; text: string | null }>(
-    `SELECT role, text FROM messages
-      WHERE conversation_id = $1 AND role IN ('user','assistant') AND text IS NOT NULL
+  since?: Date | null,
+): Promise<HistoryEntry[]> {
+  const rows = await query<{ role: string; text: string | null; created_at: Date }>(
+    `SELECT role, text, created_at FROM messages
+      WHERE conversation_id = $1
+        AND role IN ('user','assistant')
+        AND text IS NOT NULL
+        AND ($3::timestamptz IS NULL OR created_at > $3)
       ORDER BY created_at DESC
       LIMIT $2`,
-    [conversationId, turns * 2],
+    [conversationId, turns * 2, since ?? null],
   );
 
-  return rows
-    .reverse()
-    .map((r) => ({ role: r.role as 'user' | 'assistant', content: r.text! }));
+  return rows.reverse().map((r) => ({
+    message: { role: r.role as 'user' | 'assistant', content: r.text! },
+    createdAt: r.created_at,
+  }));
+}
+
+/**
+ * Guarda el resumen y avanza la marca de agua.
+ *
+ * La marca es la fecha del último mensaje resumido, nunca `NOW()`: entre que se
+ * leyó el historial y se guarda el resumen pueden haber entrado mensajes nuevos,
+ * y usar la hora actual los daría por resumidos sin estarlo — desaparecerían del
+ * contexto sin llegar a entrar en ningún resumen.
+ */
+export async function saveSummary(
+  conversationId: string,
+  summary: string,
+  summarizedUntil: Date,
+): Promise<void> {
+  await query(
+    `UPDATE conversations SET summary = $2, summarized_until = $3 WHERE id = $1`,
+    [conversationId, summary, summarizedUntil],
+  );
 }
 
 export async function recordMessage(params: {

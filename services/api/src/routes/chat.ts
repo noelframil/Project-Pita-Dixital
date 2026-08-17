@@ -84,6 +84,10 @@ export async function chatRoutes(app: FastifyInstance) {
             total_tokens: result.usage.totalTokens,
           },
           latency_ms: result.latencyMs,
+          // Qué herramientas se ejecutaron en este turno. El cliente es quien
+          // las configuró, así que no revela nada que no sea suyo, y ahorra
+          // muchas preguntas de "¿por qué ha tardado tanto?".
+          tools_used: result.toolsUsed,
         },
       });
     } catch (err) {

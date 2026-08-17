@@ -1,12 +1,15 @@
 import { queryOne } from '../db.js';
-import { complete, type ChatMessage } from '../llm/index.js';
+import { complete, type ChatMessage, type ToolCall } from '../llm/index.js';
 import { config } from '../config.js';
 import { buildContextBlock, compileTemplate, mergeVariables } from './prompt.js';
 import { findRelevantKnowledge } from './rag.js';
+import { buildSummaryBlock, summarize, trimToBudget } from './memory.js';
+import { executeTool, loadTools, recordInvocation, toToolSpec } from './tools.js';
 import {
   loadHistory,
   recordMessage,
   resolveConversation,
+  saveSummary,
   type ChannelKind,
 } from './conversations.js';
 
@@ -22,6 +25,8 @@ export interface BotConfig {
   temperature: number;
   max_tokens: number;
   history_turns: number;
+  context_token_budget: number;
+  max_tool_iterations: number;
 }
 
 export interface ThinkRequest {
@@ -45,6 +50,8 @@ export interface ThinkResult {
   costMicros: number;
   latencyMs: number;
   handedOff: boolean;
+  /** Herramientas ejecutadas en este turno, en orden. Para la traza y los logs. */
+  toolsUsed: string[];
 }
 
 /** Lo que se dice cuando el modelo devuelve vacío. Con la voz del bot, no un error crudo. */
@@ -55,7 +62,8 @@ export async function loadBotConfig(clientId: string): Promise<BotConfig | null>
   return queryOne<BotConfig>(
     `SELECT id, client_id, system_prompt_template, dynamic_variables,
             allowed_override_vars, channel_overrides, provider, model,
-            temperature, max_tokens, history_turns
+            temperature, max_tokens, history_turns,
+            context_token_budget, max_tool_iterations
        FROM bot_configs
       WHERE client_id = $1 AND name = 'default'`,
     [clientId],
@@ -70,8 +78,8 @@ function applyChannelOverrides(cfg: BotConfig, channel: ChannelKind): BotConfig 
 
 /**
  * El camino completo: identidad → conversación → configuración → RAG →
- * historial → modelo → registro. Lo comparten todos los canales; lo único que
- * cambia por canal son los adaptadores de entrada y de salida.
+ * memoria → modelo → herramientas → registro. Lo comparten todos los canales;
+ * lo único que cambia por canal son los adaptadores de entrada y de salida.
  */
 export async function think(req: ThinkRequest): Promise<ThinkResult> {
   const started = Date.now();
@@ -108,6 +116,7 @@ export async function think(req: ThinkRequest): Promise<ThinkResult> {
       costMicros: 0,
       latencyMs: Date.now() - started,
       handedOff: true,
+      toolsUsed: [],
     };
   }
 
@@ -119,51 +128,162 @@ export async function think(req: ThinkRequest): Promise<ThinkResult> {
 
   const { prompt: compiledPrompt } = compileTemplate(cfg.system_prompt_template, variables);
 
-  const [knowledge, history] = await Promise.all([
+  const [knowledge, entries, tools] = await Promise.all([
     findRelevantKnowledge(req.clientId, req.message),
-    loadHistory(conversation.id, cfg.history_turns),
+    // loadHistory ya incluye el mensaje que acabamos de guardar.
+    loadHistory(conversation.id, cfg.history_turns, conversation.summarized_until),
+    loadTools(req.clientId),
   ]);
 
-  const systemPrompt = compiledPrompt + buildContextBlock(knowledge);
+  // ── Fase 4: recorte por presupuesto y resumen de lo que cae ────
 
-  // loadHistory ya incluye el mensaje que acabamos de guardar, así que no se
-  // vuelve a añadir: duplicarlo hace que el modelo crea que lo dijeron dos veces.
-  const messages: ChatMessage[] = history;
+  const { kept, dropped } = trimToBudget(
+    entries.map((e) => e.message),
+    cfg.context_token_budget,
+  );
+  let summary = conversation.summary;
 
-  const result = await complete(cfg.provider, {
-    model: cfg.model,
-    system: systemPrompt,
-    messages,
-    temperature: cfg.temperature,
-    maxTokens: cfg.max_tokens,
-    signal: AbortSignal.timeout(config.LLM_TIMEOUT_MS),
-  });
+  if (dropped.length > 0) {
+    const updated = await summarize(summary, dropped, {
+      provider: cfg.provider,
+      model: cfg.model,
+    });
+    // `summarize` devuelve null si el proveedor falló. Entonces se responde con
+    // el resumen viejo y la marca de agua NO avanza: los mensajes siguen en su
+    // sitio y el próximo turno lo reintenta. Resumir tarde es mejor que dar por
+    // resumido lo que no se resumió, que sería perder ese tramo para siempre.
+    if (updated) {
+      // `trimToBudget` descarta desde el principio de la ventana cargada, así
+      // que el corte es la fecha del último descartado. Contarlo desde la base
+      // de datos daría otro mensaje cuando hay más historial sin resumir del
+      // que cabe en `history_turns`, y el tramo intermedio se perdería.
+      const cutoff = entries[dropped.length - 1]?.createdAt;
+      if (cutoff) {
+        await saveSummary(conversation.id, updated, cutoff);
+        summary = updated;
+      }
+    }
+  }
+
+  const systemPrompt = compiledPrompt + buildSummaryBlock(summary) + buildContextBlock(knowledge);
+
+  // ── Fase 3: bucle de herramientas ──────────────────────────────
+
+  const messages: ChatMessage[] = [...kept];
+  const toolsUsed: string[] = [];
+  const toolSpecs = tools.map(toToolSpec);
+  const byName = new Map(tools.map((t) => [t.name, t]));
+
+  let promptTokens = 0;
+  let completionTokens = 0;
+  let costMicros = 0;
+  let text = '';
+  let model = cfg.model;
+
+  // El +1 es la vuelta final, la que ya contesta sin pedir nada.
+  const maxRounds = Math.max(1, cfg.max_tool_iterations) + 1;
+
+  for (let round = 0; round < maxRounds; round++) {
+    // En la última vuelta se retiran las herramientas: si se dejaran, el modelo
+    // podría pedir otra llamada que ya no se va a ejecutar y contestar contando
+    // con un dato que nunca llegó.
+    const offerTools = toolSpecs.length > 0 && round < maxRounds - 1;
+
+    const result = await complete(cfg.provider, {
+      model: cfg.model,
+      system: systemPrompt,
+      messages,
+      temperature: cfg.temperature,
+      maxTokens: cfg.max_tokens,
+      signal: AbortSignal.timeout(config.LLM_TIMEOUT_MS),
+      ...(offerTools && { tools: toolSpecs }),
+    });
+
+    promptTokens += result.promptTokens;
+    completionTokens += result.completionTokens;
+    costMicros += result.costMicros;
+    text = result.text;
+    model = result.model;
+
+    if (result.toolCalls.length === 0) break;
+
+    messages.push({ role: 'assistant', content: result.text, toolCalls: result.toolCalls });
+
+    // En paralelo: el modelo puede pedir varias a la vez y encadenarlas sería
+    // sumar latencias sin motivo. Todos los resultados vuelven juntos.
+    const results = await Promise.all(
+      result.toolCalls.map((call) => runToolCall(call, byName, conversation.id)),
+    );
+
+    for (const { call, content } of results) {
+      toolsUsed.push(call.name);
+      messages.push({ role: 'tool', content, toolCallId: call.id });
+    }
+  }
 
   const latencyMs = Date.now() - started;
-  const reply = result.text.trim() || FALLBACK_REPLY;
+  const reply = text.trim() || FALLBACK_REPLY;
 
   await recordMessage({
     conversationId: conversation.id,
     role: 'assistant',
     text: reply,
-    model: result.model,
-    tokensPrompt: result.promptTokens,
-    tokensCompletion: result.completionTokens,
-    costMicros: result.costMicros,
+    model,
+    tokensPrompt: promptTokens,
+    tokensCompletion: completionTokens,
+    costMicros,
     latencyMs,
   });
 
   return {
     reply,
     conversationId: conversation.id,
-    model: result.model,
+    model,
     usage: {
-      promptTokens: result.promptTokens,
-      completionTokens: result.completionTokens,
-      totalTokens: result.promptTokens + result.completionTokens,
+      promptTokens,
+      completionTokens,
+      totalTokens: promptTokens + completionTokens,
     },
-    costMicros: result.costMicros,
+    costMicros,
     latencyMs,
     handedOff: false,
+    toolsUsed,
   };
+}
+
+/**
+ * Ejecuta una llamada y devuelve texto pase lo que pase.
+ *
+ * Una herramienta que no existe también se contesta con texto en vez de
+ * reventar: los modelos se inventan nombres de vez en cuando, y decírselo les
+ * permite corregir en la vuelta siguiente.
+ */
+async function runToolCall(
+  call: ToolCall,
+  byName: Map<string, Awaited<ReturnType<typeof loadTools>>[number]>,
+  conversationId: string,
+): Promise<{ call: ToolCall; content: string }> {
+  const tool = byName.get(call.name);
+
+  if (!tool) {
+    const disponibles = [...byName.keys()].join(', ') || 'ninguna';
+    return {
+      call,
+      content: `No existe ninguna herramienta llamada "${call.name}". Disponibles: ${disponibles}.`,
+    };
+  }
+
+  const result = await executeTool(tool, call.input);
+
+  await recordInvocation({
+    conversationId,
+    toolId: tool.id,
+    toolName: tool.name,
+    input: call.input,
+    output: result.content,
+    isError: result.isError,
+    latencyMs: result.latencyMs,
+  });
+
+  return { call, content: result.content };
 }

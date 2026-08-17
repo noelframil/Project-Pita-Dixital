@@ -30,4 +30,4 @@ export async function complete(
 }
 
 export { LlmError };
-export type { ChatMessage, CompletionResult } from './types.js';
+export type { ChatMessage, CompletionResult, ToolCall, ToolSpec } from './types.js';

@@ -1,8 +1,48 @@
-export type ChatRole = 'system' | 'user' | 'assistant';
+export type ChatRole = 'system' | 'user' | 'assistant' | 'tool';
 
 export interface ChatMessage {
   role: ChatRole;
   content: string;
+  /** Herramientas que el modelo pidió en este turno. Solo en `assistant`. */
+  toolCalls?: ToolCall[];
+  /** A qué llamada responde este resultado. Solo en `tool`. */
+  toolCallId?: string;
+}
+
+/**
+ * Herramienta ofrecida al modelo. Es la forma interna: cada proveedor la
+ * traduce a la suya (`tools` en Anthropic, `functions` en OpenAI y Ollama).
+ */
+export interface ToolSpec {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+/** Petición de ejecución que devuelve el modelo. */
+export interface ToolCall {
+  /** Ollama no devuelve identificador; ahí se sintetiza uno. */
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
+/**
+ * Esquema al que debe ceñirse la respuesta. Cada proveedor lo aplica con su
+ * mecanismo nativo (Anthropic `output_config.format`, OpenAI `response_format`,
+ * Ollama `format`), así que el modelo no puede devolver prosa alrededor del JSON.
+ *
+ * Restricciones del esquema, impuestas por los proveedores:
+ *   · Todo objeto necesita `additionalProperties: false` y `required` completo.
+ *   · Nada de `minLength`, `maxLength`, `minimum`, `maximum` ni esquemas
+ *     recursivos. Los límites de tamaño se validan en el cliente con Zod.
+ *
+ * Que el proveedor garantice la forma no exime de validar: quien llama vuelve
+ * a comprobar lo que llega.
+ */
+export interface JsonSchemaSpec {
+  name: string;
+  schema: Record<string, unknown>;
 }
 
 export interface CompletionRequest {
@@ -12,6 +52,10 @@ export interface CompletionRequest {
   temperature: number;
   maxTokens: number;
   signal?: AbortSignal;
+  jsonSchema?: JsonSchemaSpec;
+  /** Sobrescribe LLM_TIMEOUT_MS. Las tareas de administración tardan más que un chat. */
+  timeoutMs?: number;
+  tools?: ToolSpec[];
 }
 
 export interface CompletionResult {
@@ -22,6 +66,8 @@ export interface CompletionResult {
   /** Coste en millonésimas de euro. Enteros: nada de float para dinero. */
   costMicros: number;
   finishReason: string;
+  /** Vacío cuando el modelo contestó sin pedir herramientas. */
+  toolCalls: ToolCall[];
 }
 
 export interface LlmProvider {

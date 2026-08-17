@@ -39,6 +39,24 @@ const schema = z.object({
   RATE_LIMIT_PER_MINUTE: z.coerce.number().int().default(30),
   LLM_TIMEOUT_MS: z.coerce.number().int().default(45_000),
   MAX_MESSAGE_CHARS: z.coerce.number().int().default(4_000),
+
+  // Autoconfiguración (fase 1). Se ejecuta una vez por cliente, desde la CLI,
+  // y de su calidad depende todo lo que ese bot dirá después: aquí interesa el
+  // modelo bueno, no el barato. Con `--provider ollama` se prueba sin gastar.
+  AUTOCONFIG_PROVIDER: z.string().default('anthropic'),
+  AUTOCONFIG_MODEL: z.string().default('claude-opus-5'),
+  // El razonamiento y la respuesta comparten presupuesto: si se queda corto,
+  // la salida llega vacía o truncada.
+  AUTOCONFIG_MAX_TOKENS: z.coerce.number().int().default(8_000),
+  AUTOCONFIG_TIMEOUT_MS: z.coerce.number().int().default(180_000),
+
+  // Herramientas (fase 3). Ejecutan peticiones a terceros con parámetros que
+  // elige el modelo: todo acotado.
+  TOOL_TIMEOUT_MS: z.coerce.number().int().default(10_000),
+  TOOL_MAX_RESPONSE_CHARS: z.coerce.number().int().default(4_000),
+
+  // Memoria (fase 4). Techo del resumen acumulado de cada conversación.
+  MEMORY_SUMMARY_MAX_TOKENS: z.coerce.number().int().default(400),
 });
 
 const parsed = schema.safeParse(process.env);

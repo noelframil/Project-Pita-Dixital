@@ -1,0 +1,44 @@
+{
+  "_comentario": [
+    "Plantilla de herramienta. Se registra con:",
+    "  npm run admin -- add-tool <slug> ./mi-herramienta.json",
+    "",
+    "El modelo solo ve name, description e input_schema. El bloque http va",
+    "cifrado en la base de datos y nunca llega al prompt, así que las claves de",
+    "API del cliente pueden vivir en headers sin que el modelo pueda filtrarlas.",
+    "",
+    "No versiones este fichero con credenciales dentro."
+  ],
+
+  "name": "consultar_disponibilidad",
+
+  "description": "Consulta si hay habitaciones libres en un rango de fechas. Úsala cuando el huésped pregunte por disponibilidad, precios de una estancia concreta o quiera reservar. No la uses para preguntas generales sobre la casa: para eso ya tienes tu memoria local.",
+
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["entrada", "salida"],
+    "properties": {
+      "entrada": {
+        "type": "string",
+        "description": "Fecha de llegada en formato AAAA-MM-DD."
+      },
+      "salida": {
+        "type": "string",
+        "description": "Fecha de salida en formato AAAA-MM-DD."
+      },
+      "personas": {
+        "type": "integer",
+        "description": "Número de huéspedes. Si no lo dicen, no lo mandes."
+      }
+    }
+  },
+
+  "http": {
+    "method": "GET",
+    "url": "https://api.tu-motor-de-reservas.com/v1/disponibilidad?desde={{entrada}}&hasta={{salida}}",
+    "headers": {
+      "authorization": "Bearer PON_AQUI_LA_CLAVE"
+    }
+  }
+}
