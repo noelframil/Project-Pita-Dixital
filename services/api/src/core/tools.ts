@@ -291,7 +291,14 @@ export async function executeTool(
   }
 }
 
-/** Traza de la llamada. Va aparte del historial: se consulta para otras cosas. */
+/**
+ * Traza de la llamada. Va aparte del historial: se consulta para otras cosas.
+ *
+ * No propaga sus fallos. Es una escritura de auditoría, no el camino crítico:
+ * romper la conversación de un huésped porque no se pudo apuntar en el registro
+ * lo que ya se ejecutó cambia un problema de observabilidad por uno de servicio.
+ * Se pierde una fila de traza y se grita por stderr, que es la peor de las dos.
+ */
 export async function recordInvocation(params: {
   conversationId: string;
   toolId: string | null;
@@ -301,18 +308,25 @@ export async function recordInvocation(params: {
   isError: boolean;
   latencyMs: number;
 }): Promise<void> {
-  await query(
-    `INSERT INTO tool_invocations
-       (conversation_id, tool_id, tool_name, input, output, is_error, latency_ms)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-    [
-      params.conversationId,
-      params.toolId,
-      params.toolName,
-      JSON.stringify(params.input),
-      params.output.slice(0, config.TOOL_MAX_RESPONSE_CHARS),
-      params.isError,
-      params.latencyMs,
-    ],
-  );
+  try {
+    await query(
+      `INSERT INTO tool_invocations
+         (conversation_id, tool_id, tool_name, input, output, is_error, latency_ms)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [
+        params.conversationId,
+        params.toolId,
+        params.toolName,
+        JSON.stringify(params.input),
+        params.output.slice(0, config.TOOL_MAX_RESPONSE_CHARS),
+        params.isError,
+        params.latencyMs,
+      ],
+    );
+  } catch (err) {
+    console.error(
+      `[tools] no se pudo registrar la invocación de "${params.toolName}":`,
+      err instanceof Error ? err.message : err,
+    );
+  }
 }

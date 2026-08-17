@@ -255,11 +255,14 @@ export async function generateBotBlueprint(
     variables[key] = value;
   }
 
-  if (/<\/?contexto>/i.test(data.role_block)) {
+  // Delimitadores reservados: el del RAG y el de la memoria. Una plantilla que
+  // los abre o los cierra puede colar texto propio como si fuera conocimiento
+  // recuperado o un recuerdo de la conversación.
+  const reservado = /<\/?(contexto_recuperado|contexto|memoria)>/i.exec(data.role_block);
+  if (reservado) {
     throw new AutoconfigError(
-      'La plantilla usa el delimitador <contexto>, reservado para el bloque del RAG. ' +
-        'Una plantilla que lo abre o lo cierra puede colar texto como si fuera ' +
-        'conocimiento recuperado.',
+      `La plantilla usa el delimitador ${reservado[0]}, que está reservado. ` +
+        'Los bloques de contexto y de memoria los inyecta el sistema.',
     );
   }
 

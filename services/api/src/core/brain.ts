@@ -1,10 +1,19 @@
 import { queryOne } from '../db.js';
-import { complete, type ChatMessage, type ToolCall } from '../llm/index.js';
+import type { ChatMessage } from '../llm/index.js';
 import { config } from '../config.js';
+import { REACT_PROMPT_BLOCK, runAgent, type AgentStep } from './agent.js';
 import { buildContextBlock, compileTemplate, mergeVariables } from './prompt.js';
 import { findRelevantKnowledge } from './rag.js';
 import { buildSummaryBlock, summarize, trimToBudget } from './memory.js';
-import { executeTool, loadTools, recordInvocation, toToolSpec } from './tools.js';
+import { loadTools } from './tools.js';
+import {
+  HANDOFF_PROMPT_BLOCK,
+  HANDOFF_TOOL,
+  HANDOFF_USER_REPLY,
+  detectLoop,
+  escalateToHuman,
+  type HandoffReasonKind,
+} from './handoff.js';
 import {
   loadHistory,
   recordMessage,
@@ -27,6 +36,9 @@ export interface BotConfig {
   history_turns: number;
   context_token_budget: number;
   max_tool_iterations: number;
+  rag_min_similarity: number;
+  rag_top_k: number;
+  handoff_enabled: boolean;
 }
 
 export interface ThinkRequest {
@@ -40,6 +52,10 @@ export interface ThinkRequest {
   channelAccountId?: string | null;
   /** Id del mensaje en el proveedor. Sirve de clave de idempotencia. */
   providerMsgId?: string | null;
+  /** De dónde salió el texto: tecleado, transcrito de audio o descrito de una imagen. */
+  sourceKind?: 'text' | 'audio' | 'image';
+  /** Coste de transcribir o describir, que no es del turno de chat. */
+  mediaCostMicros?: number;
 }
 
 export interface ThinkResult {
@@ -50,8 +66,10 @@ export interface ThinkResult {
   costMicros: number;
   latencyMs: number;
   handedOff: boolean;
-  /** Herramientas ejecutadas en este turno, en orden. Para la traza y los logs. */
   toolsUsed: string[];
+  /** Traza del bucle ReAct. Vacía si el modelo contestó a la primera. */
+  steps: AgentStep[];
+  stopReason: string;
 }
 
 /** Lo que se dice cuando el modelo devuelve vacío. Con la voz del bot, no un error crudo. */
@@ -63,7 +81,8 @@ export async function loadBotConfig(clientId: string): Promise<BotConfig | null>
     `SELECT id, client_id, system_prompt_template, dynamic_variables,
             allowed_override_vars, channel_overrides, provider, model,
             temperature, max_tokens, history_turns,
-            context_token_budget, max_tool_iterations
+            context_token_budget, max_tool_iterations,
+            rag_min_similarity, rag_top_k, handoff_enabled
        FROM bot_configs
       WHERE client_id = $1 AND name = 'default'`,
     [clientId],
@@ -77,9 +96,12 @@ function applyChannelOverrides(cfg: BotConfig, channel: ChannelKind): BotConfig 
 }
 
 /**
- * El camino completo: identidad → conversación → configuración → RAG →
- * memoria → modelo → herramientas → registro. Lo comparten todos los canales;
- * lo único que cambia por canal son los adaptadores de entrada y de salida.
+ * El camino completo: identidad → conversación → configuración → RAG → memoria
+ * → agente → registro. Lo comparten todos los canales; lo único que cambia por
+ * canal son los adaptadores de entrada y de salida.
+ *
+ * Lo multimodal queda por debajo de esta capa: cuando un mensaje llega aquí ya
+ * es texto, venga de un teclado, de Whisper o de un modelo de visión.
  */
 export async function think(req: ThinkRequest): Promise<ThinkResult> {
   const started = Date.now();
@@ -104,9 +126,13 @@ export async function think(req: ThinkRequest): Promise<ThinkResult> {
     role: 'user',
     text: req.message,
     providerMsgId: req.providerMsgId,
+    sourceKind: req.sourceKind ?? 'text',
+    mediaCostMicros: req.mediaCostMicros ?? null,
   });
 
-  // Conversación derivada a una persona: el bot se calla hasta que la reactiven.
+  // Conversación ya derivada: el mensaje queda guardado —lo acabamos de hacer—
+  // y el bot no responde. Es lo que hace útil el handoff: si el bot siguiera
+  // contestando por encima de la persona, no habría derivado nada.
   if (conversation.status === 'handoff') {
     return {
       reply: '',
@@ -117,6 +143,8 @@ export async function think(req: ThinkRequest): Promise<ThinkResult> {
       latencyMs: Date.now() - started,
       handedOff: true,
       toolsUsed: [],
+      steps: [],
+      stopReason: 'already_handed_off',
     };
   }
 
@@ -129,13 +157,16 @@ export async function think(req: ThinkRequest): Promise<ThinkResult> {
   const { prompt: compiledPrompt } = compileTemplate(cfg.system_prompt_template, variables);
 
   const [knowledge, entries, tools] = await Promise.all([
-    findRelevantKnowledge(req.clientId, req.message),
+    findRelevantKnowledge(req.clientId, req.message, {
+      topK: cfg.rag_top_k,
+      minSimilarity: cfg.rag_min_similarity,
+    }),
     // loadHistory ya incluye el mensaje que acabamos de guardar.
     loadHistory(conversation.id, cfg.history_turns, conversation.summarized_until),
     loadTools(req.clientId),
   ]);
 
-  // ── Fase 4: recorte por presupuesto y resumen de lo que cae ────
+  // ── Recorte por presupuesto y resumen de lo que cae ────────────
 
   const { kept, dropped } = trimToBudget(
     entries.map((e) => e.message),
@@ -154,9 +185,7 @@ export async function think(req: ThinkRequest): Promise<ThinkResult> {
     // resumido lo que no se resumió, que sería perder ese tramo para siempre.
     if (updated) {
       // `trimToBudget` descarta desde el principio de la ventana cargada, así
-      // que el corte es la fecha del último descartado. Contarlo desde la base
-      // de datos daría otro mensaje cuando hay más historial sin resumir del
-      // que cabe en `history_turns`, y el tramo intermedio se perdería.
+      // que el corte es la fecha del último descartado.
       const cutoff = entries[dropped.length - 1]?.createdAt;
       if (cutoff) {
         await saveSummary(conversation.id, updated, cutoff);
@@ -165,125 +194,161 @@ export async function think(req: ThinkRequest): Promise<ThinkResult> {
     }
   }
 
-  const systemPrompt = compiledPrompt + buildSummaryBlock(summary) + buildContextBlock(knowledge);
-
-  // ── Fase 3: bucle de herramientas ──────────────────────────────
-
-  const messages: ChatMessage[] = [...kept];
-  const toolsUsed: string[] = [];
-  const toolSpecs = tools.map(toToolSpec);
-  const byName = new Map(tools.map((t) => [t.name, t]));
-
-  let promptTokens = 0;
-  let completionTokens = 0;
-  let costMicros = 0;
-  let text = '';
-  let model = cfg.model;
-
-  // El +1 es la vuelta final, la que ya contesta sin pedir nada.
-  const maxRounds = Math.max(1, cfg.max_tool_iterations) + 1;
-
-  for (let round = 0; round < maxRounds; round++) {
-    // En la última vuelta se retiran las herramientas: si se dejaran, el modelo
-    // podría pedir otra llamada que ya no se va a ejecutar y contestar contando
-    // con un dato que nunca llegó.
-    const offerTools = toolSpecs.length > 0 && round < maxRounds - 1;
-
-    const result = await complete(cfg.provider, {
-      model: cfg.model,
-      system: systemPrompt,
-      messages,
-      temperature: cfg.temperature,
-      maxTokens: cfg.max_tokens,
-      signal: AbortSignal.timeout(config.LLM_TIMEOUT_MS),
-      ...(offerTools && { tools: toolSpecs }),
+  // ── Red de seguridad: bucle detectado sin que el modelo lo pida ─
+  //
+  // Se comprueba antes de llamar al modelo. Si el usuario lleva tres turnos
+  // repitiendo lo mismo, la cuarta respuesta generada tampoco lo va a resolver,
+  // y gastarla es gastar por gastar.
+  if (cfg.handoff_enabled && detectLoop(kept)) {
+    return handOff({
+      conversation,
+      cfg,
+      req,
+      started,
+      motivo: 'bucle',
+      resumen:
+        'El usuario ha repetido la misma petición varias veces sin quedar satisfecho. ' +
+        `Última consulta: "${req.message.slice(0, 300)}"`,
+      urgencia: 'media',
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      costMicros: 0,
+      toolsUsed: [],
+      steps: [],
     });
+  }
 
-    promptTokens += result.promptTokens;
-    completionTokens += result.completionTokens;
-    costMicros += result.costMicros;
-    text = result.text;
-    model = result.model;
+  // ── Ensamblado del prompt del sistema ──────────────────────────
+  //
+  // Orden deliberado: primero la personalidad del cliente, luego lo que el
+  // sistema añade. Los bloques de infraestructura van al final porque lo último
+  // que lee el modelo pesa más, y ahí es donde están las reglas que no debe
+  // saltarse.
+  const hasTools = tools.length > 0;
+  const systemPrompt =
+    compiledPrompt +
+    buildSummaryBlock(summary) +
+    buildContextBlock(knowledge) +
+    (hasTools ? REACT_PROMPT_BLOCK : '') +
+    (cfg.handoff_enabled ? HANDOFF_PROMPT_BLOCK : '');
 
-    if (result.toolCalls.length === 0) break;
+  // ── Bucle del agente ───────────────────────────────────────────
 
-    messages.push({ role: 'assistant', content: result.text, toolCalls: result.toolCalls });
+  const run = await runAgent({
+    provider: cfg.provider,
+    model: cfg.model,
+    system: systemPrompt,
+    messages: kept,
+    temperature: cfg.temperature,
+    maxTokens: cfg.max_tokens,
+    maxIterations: cfg.max_tool_iterations,
+    tools,
+    builtinTools: cfg.handoff_enabled ? [HANDOFF_TOOL] : [],
+    conversationId: conversation.id,
+  });
 
-    // En paralelo: el modelo puede pedir varias a la vez y encadenarlas sería
-    // sumar latencias sin motivo. Todos los resultados vuelven juntos.
-    const results = await Promise.all(
-      result.toolCalls.map((call) => runToolCall(call, byName, conversation.id)),
-    );
-
-    for (const { call, content } of results) {
-      toolsUsed.push(call.name);
-      messages.push({ role: 'tool', content, toolCallId: call.id });
-    }
+  if (run.handoff) {
+    return handOff({
+      conversation,
+      cfg,
+      req,
+      started,
+      motivo: run.handoff.motivo as HandoffReasonKind,
+      resumen: run.handoff.resumen,
+      urgencia: run.handoff.urgencia as 'baja' | 'media' | 'alta',
+      usage: run.usage,
+      costMicros: run.costMicros,
+      toolsUsed: run.toolsUsed,
+      steps: run.steps,
+    });
   }
 
   const latencyMs = Date.now() - started;
-  const reply = text.trim() || FALLBACK_REPLY;
+  const reply = run.text.trim() || FALLBACK_REPLY;
 
   await recordMessage({
     conversationId: conversation.id,
     role: 'assistant',
     text: reply,
-    model,
-    tokensPrompt: promptTokens,
-    tokensCompletion: completionTokens,
-    costMicros,
+    model: run.model,
+    tokensPrompt: run.usage.promptTokens,
+    tokensCompletion: run.usage.completionTokens,
+    costMicros: run.costMicros,
     latencyMs,
   });
 
   return {
     reply,
     conversationId: conversation.id,
-    model,
-    usage: {
-      promptTokens,
-      completionTokens,
-      totalTokens: promptTokens + completionTokens,
-    },
-    costMicros,
+    model: run.model,
+    usage: run.usage,
+    costMicros: run.costMicros,
     latencyMs,
     handedOff: false,
-    toolsUsed,
+    toolsUsed: run.toolsUsed,
+    steps: run.steps,
+    stopReason: run.stopReason,
   };
 }
 
 /**
- * Ejecuta una llamada y devuelve texto pase lo que pase.
+ * Cierra el turno derivando a una persona.
  *
- * Una herramienta que no existe también se contesta con texto en vez de
- * reventar: los modelos se inventan nombres de vez en cuando, y decírselo les
- * permite corregir en la vuelta siguiente.
+ * La respuesta al usuario sí se guarda y sí se envía: dejarlo sin contestar en
+ * el mismo momento en que se decide que necesita ayuda humana es exactamente el
+ * silencio que el handoff pretende evitar.
  */
-async function runToolCall(
-  call: ToolCall,
-  byName: Map<string, Awaited<ReturnType<typeof loadTools>>[number]>,
-  conversationId: string,
-): Promise<{ call: ToolCall; content: string }> {
-  const tool = byName.get(call.name);
+async function handOff(params: {
+  conversation: { id: string };
+  cfg: BotConfig;
+  req: ThinkRequest;
+  started: number;
+  motivo: HandoffReasonKind;
+  resumen: string;
+  urgencia: 'baja' | 'media' | 'alta';
+  usage: ThinkResult['usage'];
+  costMicros: number;
+  toolsUsed: string[];
+  steps: AgentStep[];
+}): Promise<ThinkResult> {
+  const { conversation, cfg, req, started } = params;
 
-  if (!tool) {
-    const disponibles = [...byName.keys()].join(', ') || 'ninguna';
-    return {
-      call,
-      content: `No existe ninguna herramienta llamada "${call.name}". Disponibles: ${disponibles}.`,
-    };
-  }
-
-  const result = await executeTool(tool, call.input);
-
-  await recordInvocation({
-    conversationId,
-    toolId: tool.id,
-    toolName: tool.name,
-    input: call.input,
-    output: result.content,
-    isError: result.isError,
-    latencyMs: result.latencyMs,
+  await escalateToHuman({
+    conversationId: conversation.id,
+    clientId: req.clientId,
+    motivo: params.motivo,
+    resumen: params.resumen,
+    urgencia: params.urgencia,
+    channel: req.channel,
+    contactName: req.displayName ?? null,
   });
 
-  return { call, content: result.content };
+  const latencyMs = Date.now() - started;
+
+  await recordMessage({
+    conversationId: conversation.id,
+    role: 'assistant',
+    text: HANDOFF_USER_REPLY,
+    model: cfg.model,
+    tokensPrompt: params.usage.promptTokens,
+    tokensCompletion: params.usage.completionTokens,
+    costMicros: params.costMicros,
+    latencyMs,
+  });
+
+  return {
+    reply: HANDOFF_USER_REPLY,
+    conversationId: conversation.id,
+    model: cfg.model,
+    usage: params.usage,
+    costMicros: params.costMicros,
+    latencyMs,
+    // false porque este turno SÍ tiene respuesta que enviar. Los siguientes
+    // mensajes de esta conversación ya saldrán con handedOff: true.
+    handedOff: false,
+    toolsUsed: params.toolsUsed,
+    steps: params.steps,
+    stopReason: 'handoff',
+  };
 }
+
+export { config };

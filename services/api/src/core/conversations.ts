@@ -152,12 +152,17 @@ export async function recordMessage(params: {
   tokensCompletion?: number | null;
   costMicros?: number | null;
   latencyMs?: number | null;
+  /** Tecleado, transcrito de audio o descrito de una imagen. */
+  sourceKind?: 'text' | 'audio' | 'image';
+  /** Coste de transcribir o describir, aparte del turno de chat. */
+  mediaCostMicros?: number | null;
 }): Promise<void> {
   await query(
     `INSERT INTO messages
        (conversation_id, role, text, provider_msg_id, model,
-        tokens_prompt, tokens_completion, cost_micros, latency_ms)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        tokens_prompt, tokens_completion, cost_micros, latency_ms,
+        source_kind, media_cost_micros)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
      ON CONFLICT (provider_msg_id) WHERE provider_msg_id IS NOT NULL DO NOTHING`,
     [
       params.conversationId,
@@ -169,6 +174,8 @@ export async function recordMessage(params: {
       params.tokensCompletion ?? null,
       params.costMicros ?? null,
       params.latencyMs ?? null,
+      params.sourceKind ?? 'text',
+      params.mediaCostMicros ?? null,
     ],
   );
 }

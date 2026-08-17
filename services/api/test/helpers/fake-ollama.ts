@@ -1,27 +1,71 @@
 /**
  * Servidor que imita la API de chat de Ollama.
  *
- * Permite probar el camino completo de la autoconfiguración —desenvolver la
- * respuesta, validar el esquema, comprobar las invariantes— inyectando lo que
- * devuelve el modelo, sin gastar tokens ni depender de que haya algo corriendo.
+ * Permite probar caminos completos —el bucle del agente, la autoconfiguración—
+ * inyectando lo que devuelve el modelo, sin gastar tokens ni depender de que
+ * haya nada corriendo.
+ *
+ * El puerto es fijo porque `config.ts` congela `OLLAMA_HOST` al importarse y no
+ * hay ocasión de enterarse de un puerto efímero antes de eso. Por eso `npm test`
+ * pasa `--test-concurrency=1`: `node --test` corre los ficheros en paralelo por
+ * defecto, y dos que levanten este servidor a la vez chocan en el puerto. La
+ * suite entera tarda un par de segundos, así que la serialización no cuesta nada.
  */
 import { createServer, type Server } from 'node:http';
 
 export const FAKE_OLLAMA_PORT = 11499;
 
+/** Una respuesta guionizada del modelo: texto, llamadas a herramientas, o ambas. */
+export interface ScriptedTurn {
+  content?: string;
+  toolCalls?: Array<{ name: string; arguments: Record<string, unknown> }>;
+}
+
 export class FakeOllama {
   private server: Server | null = null;
-  /** Lo que devolverá la próxima llamada. Se cambia entre pruebas. */
-  nextResponse = '';
+  /**
+   * Lo que se devuelve cuando el guion está agotado. Se usa tal cual, incluida
+   * la cadena vacía: hay pruebas que necesitan justamente esa respuesta.
+   */
+  nextResponse = 'Listo.';
+  /** Guion para bucles multi-vuelta: una entrada por vuelta, en orden. */
+  script: ScriptedTurn[] = [];
+  /** Cuerpos recibidos, para comprobar qué se le mandó al modelo en cada vuelta. */
+  requests: Array<Record<string, unknown>> = [];
+
+  reset(): void {
+    this.script = [];
+    this.requests = [];
+    this.nextResponse = 'Listo.';
+  }
 
   async start(): Promise<void> {
     this.server = createServer((req, res) => {
-      req.on('data', () => {});
+      let body = '';
+      req.on('data', (c) => (body += c));
       req.on('end', () => {
+        try {
+          this.requests.push(JSON.parse(body || '{}'));
+        } catch {
+          this.requests.push({});
+        }
+
+        const turn = this.script.shift();
+        const message = turn
+          ? {
+              content: turn.content ?? '',
+              ...(turn.toolCalls && {
+                tool_calls: turn.toolCalls.map((c) => ({
+                  function: { name: c.name, arguments: c.arguments },
+                })),
+              }),
+            }
+          : { content: this.nextResponse };
+
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(
           JSON.stringify({
-            message: { content: this.nextResponse },
+            message,
             prompt_eval_count: 100,
             eval_count: 50,
             done_reason: 'stop',

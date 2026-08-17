@@ -40,9 +40,13 @@ npm run dev
 ## Pruebas
 
 ```bash
-npm test          # 58 pruebas con node --test, sin BD ni claves
+npm test          # 108 pruebas con node --test, sin BD ni claves
 npm run typecheck # cubre src/ y test/
 ```
+
+Van en serie (`--test-concurrency=1`) porque dos ficheros levantan el servidor
+falso de Ollama en el mismo puerto fijo, y `config.ts` congela `OLLAMA_HOST` al
+importarse. La suite tarda menos de tres segundos, así que no cuesta nada.
 
 No hay dependencias de testing: `node --test` viene de serie con Node 20+. Las
 pruebas no abren Postgres ni llaman a ningún proveedor — lo que se comprueba son
@@ -99,6 +103,34 @@ curl -X POST http://localhost:3000/api/v1/chat \
   -d '{"session_id":"huesped_001","message":"¿Cuál es la clave del wifi?"}'
 ```
 
+## Base de conocimiento y RAG
+
+```bash
+# Ficha estructurada (sin vectorizar, búsqueda por texto y keywords)
+npm run admin -- import-knowledge casa-nigran ../../knowledge_base/knowledge_base.json
+
+# Documento largo: se trocea, se vectoriza y se guarda
+npm run admin -- embed-knowledge casa-nigran ./manual-de-la-casa.md
+```
+
+La recuperación es **híbrida** y va de más semántica a más literal: búsqueda
+vectorial (coseno sobre pgvector), texto completo en español, y keywords como
+red de seguridad. Las dos primeras corren a la vez y se fusionan por rango
+recíproco.
+
+Sustituir sin más la búsqueda de texto por la vectorial es un error frecuente:
+los embeddings son peores que un índice invertido en coincidencia literal, y en
+atención al cliente media conversación son referencias de reserva y nombres
+propios. Por eso conviven.
+
+Si no hay embeddings todavía —base sin vectorizar, o sin `OPENAI_API_KEY`— la
+parte vectorial se salta sola y el sistema sigue funcionando como antes. Es
+degradación, no caída.
+
+El umbral de similitud (`bot_configs.rag_min_similarity`, 0.35 por defecto)
+existe para no devolver nada antes que devolver ruido: un fragmento irrelevante
+en el prompt empuja al modelo a usarlo igual.
+
 ## Darle herramientas al bot
 
 Una herramienta es lo que el bot puede hacer además de hablar: consultar
@@ -134,6 +166,67 @@ diga el modelo», y el modelo obedece a quien escriba por Telegram. Los controle
 Un fallo de herramienta no rompe el turno: vuelve al modelo como texto («no se
 pudo ejecutar X porque…») para que rectifique o se lo diga al usuario.
 
+## Voz e imagen
+
+El endpoint acepta `multipart/form-data` además de JSON. Una nota de voz se
+transcribe con Whisper y una foto se describe con un modelo de visión; lo que
+sale entra en el chat como si el usuario lo hubiera escrito.
+
+```bash
+curl -X POST http://localhost:3000/api/v1/chat \
+  -H "authorization: Bearer pita_..." \
+  -F session_id=huesped_001 \
+  -F message="mira esto" \
+  -F file=@nota-de-voz.ogg
+```
+
+**El audio y la imagen se convierten a texto en el borde**, antes de entrar al
+núcleo. El RAG, la memoria, las herramientas y los tres proveedores siguen
+trabajando con texto y no se enteran. La alternativa —pasar la imagen al modelo
+principal en cada turno— se descartó porque el historial se reenvía entero: esa
+foto se pagaría en todas las peticiones posteriores de la conversación, y Ollama
+ni siquiera acepta el mismo formato. Se pierde poder repreguntar sobre la imagen
+original; cuando haga falta, la vía es releerla bajo demanda desde una
+herramienta, no reenviarla siempre.
+
+El tipo de fichero lo deciden **los primeros bytes**, no el `content-type`: ese
+campo lo rellena quien sube el archivo. Los límites de Fastify van en
+[index.ts](src/index.ts) y tapan cuatro vías distintas de agotar memoria
+(tamaño por fichero, número de ficheros, campos de texto y partes totales);
+quitar cualquiera deja la puerta abierta.
+
+Un adjunto que falle no rompe el turno: se responde con lo que haya y se le
+cuenta al usuario qué no se pudo procesar.
+
+## Handoff a una persona
+
+Cuando el usuario se enfada, pide hablar con alguien o el bot da vueltas sin
+resolver, la conversación se deriva: el bot deja de responder, los mensajes se
+siguen guardando y se avisa al cliente por webhook.
+
+```bash
+npm run admin -- set-handoff casa-nigran https://tu-crm.com/hooks/pita
+```
+
+El disparador es una **herramienta** (`escalar_a_humano`) y no un clasificador
+de sentimiento aparte. Un clasificador ve el texto sin ver la conversación: no
+sabe que es la tercera vez que preguntan lo mismo, ni que el bot acaba de decir
+que no puede ayudar — y duplica coste y latencia en cada turno. El modelo que ya
+está leyendo el hilo entero es quien mejor lo juzga, y una herramienta convierte
+ese juicio en una decisión explícita y auditable.
+
+El precio es que depende de que el modelo la llame, así que hay además una red
+determinista (`detectLoop`) que detecta al usuario repitiendo la misma petición
+y deriva sin consultar al modelo. Compara solo palabras con contenido: sin
+quitar las vacías, «¿a qué hora abre la piscina?» y «¿a qué hora cierra la
+piscina?» comparten cinco de siete palabras y parecerían la misma pregunta.
+
+El webhook **no** se manda dentro de la petición del usuario — si el servidor
+del cliente tarda treinta segundos, el usuario se queda mirando la pantalla. Va
+por una cola con reintentos y backoff exponencial, y se firma con HMAC-SHA256
+sobre `timestamp.cuerpo`; la marca va *dentro* de la firma para que una entrega
+capturada no se pueda reenviar indefinidamente.
+
 ## Memoria de las conversaciones
 
 El historial se recorta por **presupuesto de tokens**
@@ -165,14 +258,23 @@ src/
   db.ts                Pool de Postgres, helpers de consulta y transacción
   core/
     brain.ts           Orquestación: idéntica para todos los canales
+    agent.ts           Bucle ReAct: piensa, actúa, evalúa, repite
     prompt.ts          Compilación de plantilla en una pasada + lista blanca
     autoconfig.ts      Meta-prompting: descripción del negocio → bot_config validada
     tools.ts           Registro y ejecución de herramientas, con los controles de red
+    handoff.ts         Derivación a humano, detección de bucle y webhook firmado
     memory.ts          Recorte por presupuesto de tokens y resumen acumulado
-    rag.ts             Búsqueda de texto completo en español, con respaldo por keywords
+    rag.ts             Recuperación híbrida: vectorial + texto completo + keywords
+    chunking.ts        Troceado por fronteras semánticas, con solape
     conversations.ts   Identidad, historial, idempotencia
+  media/
+    types.ts           Detección de tipo por firma de fichero, no por content-type
+    audio.ts           Transcripción con Whisper
+    vision.ts          Descripción de imágenes (OpenAI o Anthropic)
+    ingest.ts          Dispatcher: todo a texto antes de entrar al núcleo
   llm/
     index.ts           Selección de proveedor + reintentos (solo 429 y 5xx)
+    embeddings.ts      text-embedding-3-small para el RAG vectorial
     ollama.ts          Local, sin coste, sin salir de la máquina
     anthropic.ts       Claude — ojo: los modelos 5 rechazan `temperature`
     openai.ts
@@ -214,6 +316,16 @@ src/
   darían por resumidos sin estarlo y desaparecerían del contexto sin dejar rastro.
 - **El resumen va delimitado y marcado como recuerdo, no como órdenes**, igual
   que el contexto del RAG: dentro hay texto que escribió un usuario.
+- **El tipo de un adjunto lo deciden sus primeros bytes**, no el `content-type`,
+  que lo rellena quien sube el fichero.
+- **La marca de tiempo va dentro de la firma HMAC del webhook**, no solo al
+  lado: si no, una entrega capturada se puede reenviar indefinidamente.
+- **La búsqueda vectorial no sustituye a la de texto completo, la complementa.**
+  Los embeddings pierden contra un índice invertido en coincidencia literal, y
+  media conversación de atención al cliente son referencias y nombres propios.
+- **En la última vuelta del agente se retiran las herramientas.** Si se dejaran,
+  el modelo podría pedir una llamada que ya no se va a ejecutar y contestar
+  contando con un dato que nunca llegó.
 
 ## Pendiente
 

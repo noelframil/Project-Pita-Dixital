@@ -57,6 +57,31 @@ const schema = z.object({
 
   // Memoria (fase 4). Techo del resumen acumulado de cada conversación.
   MEMORY_SUMMARY_MAX_TOKENS: z.coerce.number().int().default(400),
+
+  // ── RAG vectorial ───────────────────────────────────────────
+  // Solo OpenAI: la dimensión está atada al tipo de la columna en Postgres
+  // (vector(1536)), así que cambiar de modelo es una migración, no un ajuste.
+  EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
+  EMBEDDING_TIMEOUT_MS: z.coerce.number().int().default(30_000),
+
+  // ── Multimodal ──────────────────────────────────────────────
+  WHISPER_MODEL: z.string().default('whisper-1'),
+  // Fijar el idioma sube bastante la precisión: una nota corta en gallego se
+  // transcribe como portugués si se deja a que lo adivine.
+  WHISPER_LANGUAGE: z.string().default('es'),
+  VISION_PROVIDER: z.enum(['openai', 'anthropic']).default('openai'),
+  VISION_MODEL: z.string().default('gpt-4o'),
+  VISION_MAX_TOKENS: z.coerce.number().int().default(700),
+  // 10 MB. Por encima, WhatsApp ya no lo manda y una nota de voz de ese tamaño
+  // dura más de lo que nadie escucha.
+  MEDIA_MAX_BYTES: z.coerce.number().int().default(10 * 1024 * 1024),
+  MEDIA_MAX_ATTACHMENTS: z.coerce.number().int().default(4),
+  MEDIA_TIMEOUT_MS: z.coerce.number().int().default(60_000),
+
+  // ── Handoff a humano ────────────────────────────────────────
+  HANDOFF_WEBHOOK_TIMEOUT_MS: z.coerce.number().int().default(10_000),
+  HANDOFF_MAX_ATTEMPTS: z.coerce.number().int().default(6),
+  HANDOFF_POLL_MS: z.coerce.number().int().default(15_000),
 });
 
 const parsed = schema.safeParse(process.env);

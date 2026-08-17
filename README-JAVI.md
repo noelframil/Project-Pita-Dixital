@@ -324,27 +324,142 @@ mentira porque `config.ts` mata el proceso si falta algo, y
 Ollama para poder inyectar lo que devuelve el modelo. `tsconfig.test.json`
 extiende el de build para que el typecheck cubra también las pruebas.
 
+---
+
+### 2026-08-17 — Multimodal, RAG vectorial, handoff y agente ReAct
+
+Cuatro bloques nuevos. Antes del detalle, **tres desviaciones respecto a las
+especificaciones**, porque chocaban con lo que ya existía:
+
+| Pedía | Qué se hizo | Por qué |
+|---|---|---|
+| Guardar en `chat_logs` | `conversations` + `messages` | `chat_logs` no existe en este esquema. `messages` ya tenía columna `media`. |
+| Tabla nueva `knowledge_base` | `embedding` sobre `knowledge_entries` | Una tabla nueva dejaría dos almacenes de conocimiento que sincronizar, y «¿en cuál está la respuesta buena?» sin respuesta. |
+| «El conocimiento se inyecta entero en el prompt» | Ya había RAG (texto completo) | La premisa no era cierta: `rag.ts` ya recuperaba. Esto lo amplía a híbrido, no lo crea. |
+
+También conviene saber que **el handoff y el bucle de herramientas ya estaban a
+medias**: `conversations.status` ya distinguía `open`/`handoff` y `brain.ts` ya
+se callaba; el bucle de la Fase 3 ya reinyectaba errores. Lo nuevo es el
+disparador, el webhook, los pasos tipados y el prompt ReAct.
+
+#### Multimodal (voz e imagen)
+
+`multipart/form-data` en `/api/v1/chat`. Whisper para audio, modelo de visión
+para imágenes. Ficheros nuevos en [services/api/src/media/](services/api/src/media/).
+
+- **Se convierte a texto en el borde.** El núcleo entero sigue trabajando con
+  texto. La alternativa —pasar la imagen al modelo principal— la descartamos
+  porque el historial se reenvía completo: esa foto se pagaría en *cada*
+  petición posterior de la conversación, y Ollama ni acepta el formato.
+- **El tipo lo deciden los primeros bytes**, no el `content-type`, que lo
+  rellena quien sube el fichero.
+- **Cuatro límites en Fastify**, no uno: tamaño por fichero, número de ficheros,
+  campos de texto y partes totales. Cada uno tapa una vía distinta de agotar la
+  memoria; con solo `fileSize`, mil ficheros de 9 MB lo tumban igual.
+- Un adjunto que falla no rompe el turno.
+
+#### RAG vectorial (pgvector)
+
+[migración 003](services/api/migrations/003_rag_handoff_multimodal.sql) ·
+[llm/embeddings.ts](services/api/src/llm/embeddings.ts) ·
+[core/chunking.ts](services/api/src/core/chunking.ts) ·
+[core/rag.ts](services/api/src/core/rag.ts)
+
+- **Recuperación híbrida**, fusionada por rango recíproco (RRF). No se pueden
+  comparar las puntuaciones directamente: el coseno vive en 0..1 y `ts_rank` en
+  una escala propia sin techo. RRF usa solo la posición, que sí es comparable.
+- **La vectorial no sustituye a la de texto completo.** Los embeddings pierden
+  contra un índice invertido en coincidencia literal, y media conversación de
+  atención al cliente son referencias de reserva y nombres propios.
+- **HNSW y no ivfflat**: ivfflat exige entrenar centroides, así que un índice
+  creado con la tabla vacía —que es como se crea en una migración— sale
+  inservible.
+- **La dimensión no es dinámica**, aunque la especificación lo pedía: pgvector
+  la fija en el tipo de la columna y el índice depende de ella. Cambiar de
+  modelo es una migración más un reindexado. Queda `embedding_model` en cada
+  fila para saber qué regenerar.
+- Sin `OPENAI_API_KEY` la parte vectorial se salta sola. Degradación, no caída.
+
+#### Handoff inteligente
+
+[core/handoff.ts](services/api/src/core/handoff.ts)
+
+- **El disparador es una herramienta, no un clasificador aparte.** Un
+  clasificador ve el texto sin ver la conversación: no sabe que es la tercera
+  vez que preguntan lo mismo. Y duplica coste y latencia en cada turno.
+- **Más una red determinista** (`detectLoop`) que no depende del criterio del
+  modelo, porque el bucle es justo lo que peor detecta desde dentro: cada turno
+  le parece razonable por separado.
+- **El webhook no se manda dentro de la petición del usuario.** Si el servidor
+  del cliente tarda treinta segundos, el usuario se queda mirando la pantalla.
+  Cola con reintentos, backoff exponencial y `FOR UPDATE SKIP LOCKED` para que
+  varias instancias no dupliquen avisos.
+- **La marca de tiempo va dentro de la firma HMAC**, no solo al lado: si no, una
+  entrega capturada se reenvía indefinidamente.
+
+#### Agente ReAct
+
+[core/agent.ts](services/api/src/core/agent.ts) — el bucle sale de `brain.ts` a
+su propio módulo con pasos tipados (`AgentStep`), y `brain.ts` vuelve a decidir
+*qué* pasa en vez de *cómo*.
+
+- Tres condiciones de parada: respuesta final, vueltas agotadas, o handoff.
+- **En la última vuelta se retiran las herramientas.** Si se dejaran, el modelo
+  podría pedir una llamada que ya no se ejecuta y contestar con un dato que
+  nunca llegó.
+- **Corta la llamada idéntica repetida** dentro del mismo turno: un modelo
+  atascado repite la misma consulta esperando otro resultado.
+- Un fallo de herramienta vuelve al modelo como texto para que replantee. Es lo
+  que separa un agente de un script.
+
+#### Tres bugs propios encontrados al probar
+
+1. **`recordInvocation` rompía la conversación** si fallaba el `INSERT` de la
+   traza. Es una escritura de auditoría, no el camino crítico: ahora se captura
+   y se grita por stderr.
+2. **`audio.ts` comprobaba la clave de API antes que el tamaño**, así que un
+   audio de 11 MB se rechazaba por el motivo equivocado. La entrada se valida
+   antes que la configuración.
+3. **`chunkText` con solape mayor que el fragmento** avanzaba de carácter en
+   carácter: miles de trozos casi idénticos, cada uno pagado como embedding.
+   Ahora el solape se acota a la mitad del fragmento.
+
+Y una corrección en `detectLoop`: comparaba incluyendo palabras vacías, con lo
+que «¿a qué hora abre la piscina?» y «¿a qué hora cierra la piscina?» salían
+como la misma pregunta. Ahora solo compara palabras con contenido.
+
 ### Estado de las pruebas
 
-`npm run typecheck` limpio. **58 pruebas en verde**, sin BD ni claves:
+`npm run typecheck` limpio. **108 pruebas en verde**, sin BD ni claves:
 
 | Bloque | Nº | Cubre |
 |---|---|---|
-| Fase 1 — autoconfig | 15 | Camino feliz, JSON en vallas markdown, 9 invariantes |
-| Fase 3 — herramientas | 20 | SSRF (12 vectores), reescritura de origen, ejecución |
-| Fase 3 — traducción LLM | 12 | Agrupado de Anthropic, formato OpenAI/Ollama, argumentos rotos |
-| Fase 4 — memoria | 11 | Recorte, prefijo, coste de llamadas, bloque de memoria |
+| Autoconfig | 15 | Camino feliz, JSON en vallas markdown, 9 invariantes |
+| Herramientas | 20 | SSRF (12 vectores), reescritura de origen, ejecución |
+| Traducción LLM | 12 | Agrupado de Anthropic, formato OpenAI/Ollama, argumentos rotos |
+| Memoria | 11 | Recorte, prefijo, coste de llamadas, bloque de memoria |
+| Agente ReAct | 11 | Parada, errores en cascada, deduplicación, handoff, paralelismo |
+| Multimodal | 17 | Firmas de fichero, validación previa, dispatcher |
+| Handoff y RAG | 22 | Bucles, firma HMAC, troceado, esquema de la herramienta |
+
+Las del agente corren el bucle completo contra un servidor que imita la API de
+Ollama, con guiones de varias vueltas: es la única forma de probar la parada,
+la reinyección de errores y la deduplicación sin gastar tokens.
 
 **Sin verificar, y conviene decirlo claro:**
 
-- **La migración 002 no se ha aplicado nunca.** No hay Docker ni Postgres en este
-  entorno. El SQL está revisado a ojo, no ejecutado.
-- **Ninguna llamada real a un modelo.** No hay clave de Anthropic ni de OpenAI ni
-  Ollama corriendo. La traducción de mensajes está probada contra el formato
-  esperado, no contra las APIs.
-- **El bucle de herramientas nunca ha dado una vuelta completa de verdad.**
+- **Las migraciones 002 y 003 no se han aplicado nunca.** No hay Docker ni
+  Postgres en este entorno. El SQL está revisado a ojo, no ejecutado. La 003 es
+  la de más riesgo: `CREATE EXTENSION vector` y el índice HNSW dependen de que
+  la imagen de pgvector esté como se espera.
+- **Ninguna llamada real a un modelo, a Whisper, a visión ni a embeddings.** No
+  hay claves en este entorno. El bucle del agente sí se ha probado entero, pero
+  contra un servidor que imita a Ollama, no contra las APIs de verdad.
+- **El webhook de handoff no se ha entregado nunca a un receptor real.** La
+  firma está probada contra su propia definición; falta verificarla desde el
+  otro lado.
 - **La autoconfiguración no se ha probado contra Opus 5**, así que la calidad del
   prompt que produce está por ver.
 
-Primera sesión con `docker compose up -d`, `npm run migrate` y una clave real
+Primera sesión con `docker compose up -d`, `npm run migrate` y claves reales
 debería centrarse exactamente en esos cuatro puntos.

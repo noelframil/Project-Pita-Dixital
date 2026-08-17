@@ -8,10 +8,14 @@
  *   npm run admin -- import-knowledge <slug> <ruta.json>
  *   npm run admin -- list
  */
+import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { pool, query, queryOne } from '../db.js';
 import { encryptJson, generateApiKey } from '../lib/crypto.js';
 import { AutoconfigError, generateBotBlueprint } from '../core/autoconfig.js';
+import { chunkMarkdown, chunkText } from '../core/chunking.js';
+import { replaceKnowledgeChunks } from '../core/rag.js';
+import { embedTexts } from '../llm/embeddings.js';
 import {
   TOOL_NAME_PATTERN,
   ToolConfigError,
@@ -40,9 +44,11 @@ Uso:
   npm run admin -- issue-key <slug> [etiqueta]
   npm run admin -- link-telegram <slug> <bot-token>
   npm run admin -- import-knowledge <slug> <ruta.json>
+  npm run admin -- embed-knowledge <slug> <ruta.md|.txt> [--source <ref>]
   npm run admin -- add-tool <slug> <ruta.json>
   npm run admin -- list-tools <slug>
   npm run admin -- remove-tool <slug> <nombre>
+  npm run admin -- set-handoff <slug> <https://url-del-webhook>
   npm run admin -- list
 
 Opciones de autoconfig:
@@ -394,6 +400,89 @@ async function removeTool(slug: string, name: string) {
   console.log(`✅ Herramienta "${name}" desactivada. El histórico de llamadas se conserva.`);
 }
 
+// ── RAG vectorial ────────────────────────────────────────────────
+
+/**
+ * Trocea un documento, lo vectoriza y lo guarda.
+ *
+ * El `source_ref` (por defecto la ruta del fichero) identifica el documento:
+ * reindexarlo borra sus fragmentos anteriores en vez de acumular duplicados.
+ */
+async function embedKnowledge(slug: string, path: string, flags: Map<string, string>) {
+  const clientId = await clientIdBySlug(slug);
+  const sourceRef = flags.get('source') ?? path;
+  const raw = await readFile(path, 'utf8');
+
+  const chunks = path.endsWith('.md') ? chunkMarkdown(raw) : chunkText(raw);
+  if (chunks.length === 0) {
+    console.error('❌ El documento está vacío.');
+    process.exit(1);
+  }
+
+  console.log(`\n⏳ ${chunks.length} fragmentos. Vectorizando…`);
+
+  const { vectors, promptTokens, costMicros, model } = await embedTexts(chunks.map((c) => c.text));
+
+  await replaceKnowledgeChunks(
+    clientId,
+    sourceRef,
+    chunks.map((chunk, i) => ({
+      // El título es la primera línea del fragmento, recortada. Se enseña al
+      // modelo junto al cuerpo, así que conviene que diga algo.
+      title: chunk.text.split('\n')[0]!.replace(/^#+\s*/, '').slice(0, 120) || `Fragmento ${i + 1}`,
+      body: chunk.text,
+      embedding: vectors[i]!,
+      index: chunk.index,
+      metadata: { source: sourceRef, chunk: chunk.index, total: chunks.length },
+    })),
+    model,
+  );
+
+  const euros = (costMicros / 1_000_000).toFixed(5);
+  console.log(`✅ ${chunks.length} fragmentos vectorizados para "${slug}".`);
+  console.log(`   fuente: ${sourceRef}`);
+  console.log(`   modelo: ${model} · ${promptTokens} tokens ≈ ${euros} €\n`);
+}
+
+// ── Handoff ──────────────────────────────────────────────────────
+
+async function setHandoff(slug: string, url: string) {
+  const clientId = await clientIdBySlug(slug);
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    console.error(`❌ "${url}" no es una URL válida.`);
+    process.exit(1);
+  }
+  if (parsed.protocol !== 'https:') {
+    console.error(
+      '❌ El webhook tiene que ser https: por ahí viaja el resumen de la conversación.',
+    );
+    process.exit(1);
+  }
+
+  // Secreto de firma nuevo en cada configuración. Se enseña una sola vez, como
+  // las claves de API: en la base de datos queda cifrado.
+  const secret = randomBytes(32).toString('base64url');
+
+  await query(`UPDATE clients SET webhook_handoff_url = $2, webhook_secret = $3 WHERE id = $1`, [
+    clientId,
+    url,
+    encryptJson({ secret }),
+  ]);
+
+  console.log(`\n✅ Webhook de handoff configurado para "${slug}".`);
+  console.log(`   ${url}`);
+  console.log(`\n   Secreto de firma (cópialo ahora, no se vuelve a mostrar):\n`);
+  console.log(`   ${secret}\n`);
+  console.log('   Verificación en el receptor:');
+  console.log('     firma = HMAC-SHA256(secreto, `${x-pita-timestamp}.${cuerpo_crudo}`)');
+  console.log('     compara en tiempo constante con la cabecera x-pita-signature');
+  console.log('     rechaza lo que llegue con más de 5 minutos de antigüedad\n');
+}
+
 async function list() {
   const rows = await query<{
     slug: string;
@@ -454,6 +543,14 @@ try {
     case 'import-knowledge':
       if (args.length < 2) usage();
       await importKnowledge(args[0]!, args[1]!);
+      break;
+    case 'embed-knowledge':
+      if (args.length < 2) usage();
+      await embedKnowledge(args[0]!, args[1]!, flags);
+      break;
+    case 'set-handoff':
+      if (args.length < 2) usage();
+      await setHandoff(args[0]!, args[1]!);
       break;
     case 'add-tool':
       if (args.length < 2) usage();
