@@ -9,7 +9,7 @@ import { config } from '../config.js';
 import { query, queryOne } from '../db.js';
 import { getRedis, isQueueEnabled } from './connection.js';
 
-export const PROACTIVE_QUEUE = 'pita:proactive';
+export const PROACTIVE_QUEUE = 'pita-proactive';
 
 export type ProactiveJobKind = 'proactive_message' | 'handoff_resolved';
 
