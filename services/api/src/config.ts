@@ -6,6 +6,19 @@ import { z } from 'zod';
  * al que le falta ENCRYPTION_KEY debe morir en el arranque, no al recibir el
  * primer mensaje de un cliente.
  */
+/**
+ * Booleano desde variable de entorno.
+ *
+ * `z.coerce.boolean()` NO sirve aquí: aplica `Boolean(valor)`, y `Boolean("false")`
+ * es `true`. Cualquier cadena no vacía quedaría en `true`, lo que convierte un
+ * interruptor de seguridad en lo contrario de lo que dice el fichero.
+ */
+const envBool = (def: boolean) =>
+  z
+    .enum(['true', 'false', '1', '0', 'yes', 'no'])
+    .default(def ? 'true' : 'false')
+    .transform((v) => v === 'true' || v === '1' || v === 'yes');
+
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().default(3000),
@@ -30,6 +43,21 @@ const schema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
 
   // Canales
+  // ── Captación ────────────────────────────────────────────────
+  APOLLO_API_KEY: z.string().optional(),
+  APOLLO_TIMEOUT_MS: z.coerce.number().int().default(30_000),
+  /** Freno propio: Apollo permite más, pero un bucle con un fallo cuesta créditos. */
+  APOLLO_MAX_ENRICH_PER_RUN: z.coerce.number().int().default(200),
+
+  RESEND_API_KEY: z.string().optional(),
+  OUTREACH_FROM_EMAIL: z.string().optional(),
+  OUTREACH_FROM_NAME: z.string().default('Zenith Rise Capital'),
+  OUTREACH_REPLY_TO: z.string().optional(),
+  /** Envíos por minuto. Salir despacio protege la reputación del dominio. */
+  OUTREACH_SEND_PER_MINUTE: z.coerce.number().int().default(20),
+  /** Si es false, nada sale a internet: se registra el envío y ya. */
+  OUTREACH_LIVE: envBool(false),
+
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
 

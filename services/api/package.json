@@ -18,7 +18,8 @@
     "infra:down": "docker compose -f ../../docker-compose.yml down",
     "infra:reset": "docker compose -f ../../docker-compose.yml down -v && npm run infra:up",
     "chat": "tsx scripts/chat-cli.ts",
-    "tunnel": "tsx scripts/tunnel.ts"
+    "tunnel": "tsx scripts/tunnel.ts",
+    "outreach": "tsx src/cli/outreach.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
