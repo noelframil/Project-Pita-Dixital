@@ -9,6 +9,8 @@ services/api/node_modules
 services/api/.env
 services/api/.env.*
 !services/api/.env.example
+# Plantillas de perfil: llevan huecos, no claves. Se copian a .env.
+!services/api/.env.staging.example
 config_node/*credentials*.json
 config_node/*-key.json
 *.pem

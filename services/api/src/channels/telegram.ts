@@ -3,12 +3,12 @@ import { query } from '../db.js';
 import { decryptJson } from '../lib/crypto.js';
 import { think } from '../core/brain.js';
 import { claimProviderMessage } from '../core/conversations.js';
-import {
-  splitForChannel,
-  type ChannelAccount,
-  type ChannelAdapter,
-  type InboundEvent,
-  type OutboundMessage,
+import { renderForChannel } from './outputFormatter.js';
+import type {
+  ChannelAccount,
+  ChannelAdapter,
+  InboundEvent,
+  OutboundMessage,
 } from './types.js';
 
 const API = 'https://api.telegram.org/bot';
@@ -57,10 +57,11 @@ export const telegramAdapter: ChannelAdapter = {
   },
 
   render(reply: string, threadRef: string): OutboundMessage[] {
-    return splitForChannel(reply, telegramAdapter.limits.maxChars).map((text) => ({
-      threadRef,
-      text,
-    }));
+    // Formatea para Telegram y luego trocea. En ese orden: al revés, una
+    // negrita podría partirse entre dos mensajes y no renderizar en ninguno.
+    return renderForChannel(reply, 'telegram', {
+      maxChars: telegramAdapter.limits.maxChars,
+    }).map((text) => ({ threadRef, text }));
   },
 
   async send(msg: OutboundMessage, account: ChannelAccount) {

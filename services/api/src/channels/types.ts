@@ -70,27 +70,7 @@ export interface ChannelAdapter {
   send(msg: OutboundMessage, account: ChannelAccount): Promise<{ providerMsgId: string }>;
 }
 
-/**
- * Trocea respetando el límite del canal, cortando por párrafo y luego por
- * frase. Partir a ciegas por número de caracteres deja frases a medias.
- */
-export function splitForChannel(text: string, maxChars: number): string[] {
-  if (text.length <= maxChars) return [text];
-
-  const chunks: string[] = [];
-  let remaining = text;
-
-  while (remaining.length > maxChars) {
-    const window = remaining.slice(0, maxChars);
-    let cut = window.lastIndexOf('\n\n');
-    if (cut < maxChars * 0.5) cut = window.lastIndexOf('. ');
-    if (cut < maxChars * 0.5) cut = window.lastIndexOf(' ');
-    if (cut <= 0) cut = maxChars;
-
-    chunks.push(remaining.slice(0, cut).trim());
-    remaining = remaining.slice(cut).trim();
-  }
-  if (remaining) chunks.push(remaining);
-
-  return chunks;
-}
+// El troceado y el formateo viven juntos en `outputFormatter.ts`, porque el
+// orden entre ambos importa: primero formatear, después trocear. Se reexportan
+// desde aquí para que los adaptadores sigan teniendo una sola puerta.
+export { renderForChannel, splitForChannel, formatForChannel } from './outputFormatter.js';

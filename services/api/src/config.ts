@@ -39,6 +39,86 @@ const schema = z.object({
   RATE_LIMIT_PER_MINUTE: z.coerce.number().int().default(30),
   LLM_TIMEOUT_MS: z.coerce.number().int().default(45_000),
   MAX_MESSAGE_CHARS: z.coerce.number().int().default(4_000),
+
+  // Autoconfiguración (fase 1). Se ejecuta una vez por cliente, desde la CLI,
+  // y de su calidad depende todo lo que ese bot dirá después: aquí interesa el
+  // modelo bueno, no el barato. Con `--provider ollama` se prueba sin gastar.
+  AUTOCONFIG_PROVIDER: z.string().default('anthropic'),
+  AUTOCONFIG_MODEL: z.string().default('claude-opus-5'),
+  // El razonamiento y la respuesta comparten presupuesto: si se queda corto,
+  // la salida llega vacía o truncada.
+  AUTOCONFIG_MAX_TOKENS: z.coerce.number().int().default(8_000),
+  AUTOCONFIG_TIMEOUT_MS: z.coerce.number().int().default(180_000),
+
+  // Herramientas (fase 3). Ejecutan peticiones a terceros con parámetros que
+  // elige el modelo: todo acotado.
+  TOOL_TIMEOUT_MS: z.coerce.number().int().default(10_000),
+  TOOL_MAX_RESPONSE_CHARS: z.coerce.number().int().default(4_000),
+
+  // Memoria (fase 4). Techo del resumen acumulado de cada conversación.
+  MEMORY_SUMMARY_MAX_TOKENS: z.coerce.number().int().default(400),
+
+  // ── RAG vectorial ───────────────────────────────────────────
+  // Solo OpenAI: la dimensión está atada al tipo de la columna en Postgres
+  // (vector(1536)), así que cambiar de modelo es una migración, no un ajuste.
+  EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
+  EMBEDDING_TIMEOUT_MS: z.coerce.number().int().default(30_000),
+
+  // ── Multimodal ──────────────────────────────────────────────
+  WHISPER_MODEL: z.string().default('whisper-1'),
+  // Fijar el idioma sube bastante la precisión: una nota corta en gallego se
+  // transcribe como portugués si se deja a que lo adivine.
+  WHISPER_LANGUAGE: z.string().default('es'),
+  VISION_PROVIDER: z.enum(['openai', 'anthropic']).default('openai'),
+  VISION_MODEL: z.string().default('gpt-4o'),
+  VISION_MAX_TOKENS: z.coerce.number().int().default(700),
+  // 10 MB. Por encima, WhatsApp ya no lo manda y una nota de voz de ese tamaño
+  // dura más de lo que nadie escucha.
+  MEDIA_MAX_BYTES: z.coerce.number().int().default(10 * 1024 * 1024),
+  MEDIA_MAX_ATTACHMENTS: z.coerce.number().int().default(4),
+  MEDIA_TIMEOUT_MS: z.coerce.number().int().default(60_000),
+
+  // ── Handoff a humano ────────────────────────────────────────
+  HANDOFF_WEBHOOK_TIMEOUT_MS: z.coerce.number().int().default(10_000),
+  HANDOFF_MAX_ATTEMPTS: z.coerce.number().int().default(6),
+  HANDOFF_POLL_MS: z.coerce.number().int().default(15_000),
+
+  // ── Trazabilidad del agente (LLMOps) ────────────────────────
+  TRACE_ENABLED: z
+    .string()
+    .default('true')
+    .transform((v) => v !== 'false' && v !== '0'),
+  // El resultado de una herramienta puede ser un JSON de megabytes. Para
+  // auditar basta el principio; lo completo ya está en tool_invocations.
+  TRACE_MAX_PAYLOAD_CHARS: z.coerce.number().int().default(4_000),
+
+  // ── Cola de mensajes proactivos ─────────────────────────────
+  // Opcional: sin REDIS_URL la capa proactiva se apaga y el resto arranca igual.
+  // El flujo de desarrollo por defecto (docker compose = solo Postgres) sigue
+  // funcionando sin montar un Redis para tocar un prompt.
+  REDIS_URL: z.string().optional(),
+  PROACTIVE_CONCURRENCY: z.coerce.number().int().default(2),
+  // Tope por minuto. Una tanda de mil recordatorios no puede agotar el rate
+  // limit del proveedor y dejar sin servicio a quien está esperando en vivo.
+  PROACTIVE_RATE_MAX: z.coerce.number().int().default(30),
+  PROACTIVE_MAX_ATTEMPTS: z.coerce.number().int().default(4),
+  PROACTIVE_MAX_TOKENS: z.coerce.number().int().default(300),
+  // Descanso mínimo entre proactivos al mismo contacto: 6 h.
+  PROACTIVE_MIN_GAP_MS: z.coerce.number().int().default(6 * 3600 * 1000),
+  // Tope de programación: 30 días. Más allá, el contexto de la conversación ya
+  // no se parece en nada al de ahora y el mensaje llegaría descolocado.
+  PROACTIVE_MAX_DELAY_MS: z.coerce.number().int().default(30 * 86_400_000),
+
+  // ── Autocrítica ─────────────────────────────────────────────
+  // Se activa por cliente (bot_configs.reflection_enabled), apagada por defecto:
+  // añade una llamada completa por turno y la decisión —seguridad de marca
+  // frente a latencia— es del cliente.
+  REFLECTION_MAX_TOKENS: z.coerce.number().int().default(300),
+  REFLECTION_TIMEOUT_MS: z.coerce.number().int().default(20_000),
+  // El prompt del cliente se recorta antes de mandárselo al crítico: uno muy
+  // largo dispara el coste de una llamada que solo tiene que juzgar el tono y
+  // los guardrails, que están al principio.
+  REFLECTION_MAX_PROMPT_CHARS: z.coerce.number().int().default(6_000),
 });
 
 const parsed = schema.safeParse(process.env);

@@ -19,6 +19,9 @@ const RATES: Record<string, Rate> = {
   'claude-haiku-4-5': { promptMicrosPerToken: 0.92, completionMicrosPerToken: 4.6 },
   // OpenAI — gpt-4o-mini: 0,15 $/M entrada, 0,60 $/M salida
   'gpt-4o-mini': { promptMicrosPerToken: 0.138, completionMicrosPerToken: 0.552 },
+  // OpenAI — gpt-4o: 2,50 $/M entrada, 10 $/M salida. Es el modelo de visión
+  // por defecto; los tokens de imagen se facturan como tokens de entrada.
+  'gpt-4o': { promptMicrosPerToken: 2.3, completionMicrosPerToken: 9.2 },
 };
 
 /** Ollama corre en tu máquina: el coste marginal por token es cero. */
