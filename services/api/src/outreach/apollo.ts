@@ -365,3 +365,66 @@ export const SECTORES_EXCLUIDOS_POR_DEFECTO = [
   'newspapers',
   'public relations',
 ];
+
+// ── Contactos guardados en la cuenta ─────────────────────────────
+//
+// `contacts/search` sí está disponible en el plan Free, a diferencia de la
+// búsqueda de personas y del enriquecimiento. Devuelve los contactos que ya
+// están GUARDADOS en la cuenta de Apollo —los que se han revelado desde su
+// interfaz— y con ellos el email, porque el crédito ya se gastó al revelarlos.
+//
+// Eso convierte el flujo en autónomo por nuestro lado: el único paso humano es
+// el "revelar y guardar" en bloque dentro de Apollo, que es justo lo que su API
+// no deja hacer sin plan de pago. A partir de ahí, esto sincroniza solo.
+
+export interface ApolloContact {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  name: string | null;
+  email: string | null;
+  title: string | null;
+  organisation: string | null;
+  organisationDomain: string | null;
+  linkedinUrl: string | null;
+}
+
+export interface ContactsResult {
+  contacts: ApolloContact[];
+  page: number;
+  totalEntries: number;
+  totalPages: number;
+}
+
+interface RawContactsResponse {
+  contacts?: Array<Record<string, unknown>>;
+  pagination?: { page: number; total_entries: number; total_pages: number };
+}
+
+export async function searchSavedContacts(page = 1, perPage = 100): Promise<ContactsResult> {
+  const raw = await post<RawContactsResponse>('/contacts/search', {
+    page: Math.min(page, SEARCH_MAX_PAGES),
+    per_page: Math.min(perPage, SEARCH_PAGE_SIZE),
+  });
+  const str = (v: unknown) => (typeof v === 'string' && v.length ? v : null);
+
+  return {
+    contacts: (raw.contacts ?? []).map((c) => {
+      const org = c.organization as Record<string, unknown> | undefined;
+      return {
+        id: String(c.id ?? ''),
+        firstName: str(c.first_name),
+        lastName: str(c.last_name),
+        name: str(c.name),
+        email: str(c.email),
+        title: str(c.title),
+        organisation: str(c.organization_name) ?? str(org?.name),
+        organisationDomain: str(org?.primary_domain),
+        linkedinUrl: str(c.linkedin_url),
+      };
+    }),
+    page: raw.pagination?.page ?? page,
+    totalEntries: raw.pagination?.total_entries ?? 0,
+    totalPages: raw.pagination?.total_pages ?? 0,
+  };
+}

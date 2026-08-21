@@ -1,7 +1,8 @@
 /**
  * CLI de captación.
  *
- *   npm run outreach -- import-csv      <slug> <lista.csv> --segmento <v> [--fuente apollo-ui]
+ *   npm run outreach -- sync-apollo     <slug> [--segmento <v>] [--paginas 5]
+  npm run outreach -- import-csv      <slug> <lista.csv> --segmento <v> [--fuente apollo-ui]
   npm run outreach -- import-accounts <slug> <accounts.json> [--prioridad 1] [--paginas 1] [--live]
   npm run outreach -- prune-accounts  <slug>
   npm run outreach -- list-accounts   <slug> [--segmento <v>] [--limite 40]
@@ -21,7 +22,7 @@ import { config } from '../config.js';
 import { pool, query, queryOne } from '../db.js';
 import {
   batchIds, enrichPeople, searchPeople, searchOrganisations, matchesIndustry,
-  SECTORES_EXCLUIDOS_POR_DEFECTO, ApolloError,
+  SECTORES_EXCLUIDOS_POR_DEFECTO, searchSavedContacts, ApolloError,
 } from '../outreach/apollo.js';
 import { runCampaign } from '../outreach/campaign.js';
 import { datoDuroDe } from '../outreach/subject.js';
@@ -29,6 +30,7 @@ import { datoDuroDe } from '../outreach/subject.js';
 function usage(): never {
   console.log(`
 Uso:
+  npm run outreach -- sync-apollo     <slug> [--segmento <v>] [--paginas 5]
   npm run outreach -- import-csv      <slug> <lista.csv> --segmento <v> [--fuente apollo-ui]
   npm run outreach -- import-accounts <slug> <accounts.json> [--prioridad 1] [--paginas 1] [--live]
   npm run outreach -- prune-accounts  <slug>
@@ -759,11 +761,86 @@ Zenith Rise Capital`;
   console.log(`  Las ${24 - n} que no están en mercado se dejan fuera a propósito.\n`);
 }
 
+
+/**
+ * Sincroniza los contactos guardados en Apollo como prospectos.
+ *
+ * Es la parte autónoma del flujo: se revela en bloque desde la interfaz de
+ * Apollo —lo único que su API no permite sin plan de pago— y a partir de ahí
+ * esto se puede lanzar en bucle sin intervención.
+ *
+ * Reutiliza los mismos rechazos que la importación por CSV. Que el contacto
+ * venga de Apollo no lo hace bueno: un buzón genérico sigue generando quejas y
+ * una dirección sin desbloquear sigue rebotando.
+ */
+async function syncApolloContacts(slug: string, flags: Map<string, string>) {
+  const clientId = await clientIdBySlug(slug);
+  const segmento = flags.get('segmento') ?? 'apollo';
+  const maxPaginas = Number(flags.get('paginas') ?? 5);
+
+  const suprimidos = new Set(
+    (await query<{ email: string }>(
+      `SELECT lower(email) AS email FROM suppression WHERE client_id=$1`, [clientId],
+    )).map((r) => r.email),
+  );
+
+  let nuevos = 0, repetidos = 0, total = 0;
+  const rechazos: Record<string, number> = {};
+  const rechazar = (m: string) => { rechazos[m] = (rechazos[m] ?? 0) + 1; };
+
+  for (let page = 1; page <= maxPaginas; page++) {
+    const res = await searchSavedContacts(page, 100);
+    if (page === 1) {
+      console.log(`\n  Contactos guardados en Apollo: ${res.totalEntries}`);
+      if (res.totalEntries === 0) {
+        console.log(`\n  No hay ninguno. Revélalos primero desde la interfaz de Apollo:`);
+        console.log(`  busca dentro de tus cuentas objetivo, selecciónalos y dale a`);
+        console.log(`  "Save" / "Access email". Luego vuelve a lanzar esto.\n`);
+        return;
+      }
+    }
+    total += res.contacts.length;
+
+    for (const c of res.contacts) {
+      const email = (c.email ?? '').trim().toLowerCase();
+      if (!email) { rechazar('sin email'); continue; }
+      if (!EMAIL_RE.test(email)) { rechazar('formato inválido'); continue; }
+      if (email.includes('email_not_unlocked')) { rechazar('sin desbloquear en Apollo'); continue; }
+      if (esBuzonGenerico(email)) { rechazar('buzón genérico'); continue; }
+      if (suprimidos.has(email)) { rechazar('en supresión'); continue; }
+
+      const row = await queryOne<{ id: string }>(
+        `INSERT INTO prospects
+           (client_id, email, display_name, organisation, role_title, segments, source, legal_basis, attributes)
+         VALUES ($1,$2,$3,$4,$5,$6,'apollo-sync','legitimate_interest',$7)
+         ON CONFLICT (client_id, email) DO NOTHING
+         RETURNING id`,
+        [
+          clientId, email,
+          c.name ?? ([c.firstName, c.lastName].filter(Boolean).join(' ') || null),
+          c.organisation, c.title, [segmento],
+          JSON.stringify({ apollo_id: c.id, linkedin: c.linkedinUrl, domain: c.organisationDomain }),
+        ],
+      );
+      if (row) nuevos++; else repetidos++;
+    }
+    if (page >= res.totalPages) break;
+  }
+
+  console.log(`\n  Revisados: ${total}   Nuevos: ${nuevos}   Ya estaban: ${repetidos}`);
+  if (Object.keys(rechazos).length) {
+    console.log(`\n  Descartados:`);
+    for (const [m, n] of Object.entries(rechazos)) console.log(`     ${String(n).padStart(4)}  ${m}`);
+  }
+  console.log(`\n  Siguiente:  npm run outreach -- stats ${slug}\n`);
+}
+
 const [command, ...rest] = process.argv.slice(2);
 const { positional, flags } = parseFlags(rest);
 
 try {
   switch (command) {
+    case 'sync-apollo':      if (!positional[0]) usage(); await syncApolloContacts(positional[0], flags); break;
     case 'import-csv':       if (positional.length < 2) usage(); await importCsv(positional[0]!, positional[1]!, flags); break;
     case 'import-accounts':  if (positional.length < 2) usage(); await importAccounts(positional[0]!, positional[1]!, flags); break;
     case 'prune-accounts':   if (!positional[0]) usage(); await pruneAccounts(positional[0]); break;
