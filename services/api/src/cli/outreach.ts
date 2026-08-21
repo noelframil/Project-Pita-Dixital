@@ -1,7 +1,10 @@
 /**
  * CLI de captación.
  *
- *   npm run outreach -- plan           <slug> <segments.json> [--creditos 95]
+ *   npm run outreach -- import-accounts <slug> <accounts.json> [--prioridad 1] [--paginas 1] [--live]
+  npm run outreach -- prune-accounts  <slug>
+  npm run outreach -- list-accounts   <slug> [--segmento <v>] [--limite 40]
+  npm run outreach -- plan           <slug> <segments.json> [--creditos 95]
   npm run outreach -- apollo-search  <slug> --titles "..." --locations "..."
  *   npm run outreach -- apollo-import  <slug> --segment <v> --titles "..." [--max N]
  *   npm run outreach -- make-campaigns <slug> <pipeline.json>
@@ -14,12 +17,18 @@
 import { readFile } from 'node:fs/promises';
 import { config } from '../config.js';
 import { pool, query, queryOne } from '../db.js';
-import { batchIds, enrichPeople, searchPeople, ApolloError } from '../outreach/apollo.js';
+import {
+  batchIds, enrichPeople, searchPeople, searchOrganisations, matchesIndustry,
+  SECTORES_EXCLUIDOS_POR_DEFECTO, ApolloError,
+} from '../outreach/apollo.js';
 import { runCampaign } from '../outreach/campaign.js';
 
 function usage(): never {
   console.log(`
 Uso:
+  npm run outreach -- import-accounts <slug> <accounts.json> [--prioridad 1] [--paginas 1] [--live]
+  npm run outreach -- prune-accounts  <slug>
+  npm run outreach -- list-accounts   <slug> [--segmento <v>] [--limite 40]
   npm run outreach -- plan           <slug> <segments.json> [--creditos 95]
   npm run outreach -- apollo-search  <slug> --titles "CEO,Director" [--locations "Spain"] [--seniorities "c_suite,vp"]
   npm run outreach -- apollo-import  <slug> --segment <vertical> --titles "..." [--locations "..."] [--max 100]
@@ -379,11 +388,154 @@ async function plan(slug: string, path: string, flags: Map<string, string>) {
   }
 }
 
+
+interface AccountFile {
+  [vertical: string]: {
+    prioridad: number;
+    busquedas: Array<{
+      nombre: string;
+      keywords?: string[];
+      locations?: string[];
+      employees?: string[];
+      sectores?: string[];
+      sectores_excluidos?: string[];
+    }>;
+  };
+}
+
+/**
+ * Importa cuentas objetivo. Consume 1 crédito por página de 100, así que se
+ * pide siempre la página completa: una de 10 cuesta lo mismo que una de 100.
+ *
+ * El filtro por sector se aplica después de recibir la página, no en la
+ * consulta: los filtros por palabra clave de Apollo cuelan bufetes y
+ * consultoras de selección, y descartarlos aquí no cuesta nada porque la
+ * página ya está pagada.
+ */
+async function importAccounts(slug: string, path: string, flags: Map<string, string>) {
+  const clientId = await clientIdBySlug(slug);
+  const file = JSON.parse(await readFile(path, 'utf8')) as AccountFile;
+  const soloPrioridad = flags.get('prioridad') ? Number(flags.get('prioridad')) : null;
+  const paginas = Number(flags.get('paginas') ?? 1);
+  const seco = flags.get('live') !== 'true';
+
+  const verticales = Object.entries(file).filter(
+    ([k, v]) => !k.startsWith('_') && (soloPrioridad === null || v.prioridad === soloPrioridad),
+  );
+  const totalBusquedas = verticales.reduce((a, [, v]) => a + v.busquedas.length, 0);
+
+  console.log(`\n  Verticales: ${verticales.map(([k]) => k).join(', ')}`);
+  console.log(`  Búsquedas: ${totalBusquedas} × ${paginas} página(s) = hasta ${totalBusquedas * paginas} créditos`);
+  if (seco) {
+    console.log(`\n  🟢 ENSAYO: no se llama a Apollo y no se gasta nada.`);
+    console.log(`     Añade --live para ejecutarlo de verdad.\n`);
+    return;
+  }
+  console.log(`\n  🔴 Consumiendo créditos…\n`);
+
+  let nuevas = 0, repetidas = 0, descartadas = 0, gastadas = 0;
+
+  for (const [vertical, cfg] of verticales) {
+    for (const b of cfg.busquedas) {
+      let deEsta = 0;
+      for (let page = 1; page <= paginas; page++) {
+        const res = await searchOrganisations({
+          keywordTags: b.keywords,
+          locations: b.locations,
+          numEmployeesRanges: b.employees,
+          page,
+          perPage: 100,
+        });
+        gastadas++;
+
+        for (const org of res.organisations) {
+          const excluidos = [...SECTORES_EXCLUIDOS_POR_DEFECTO, ...(b.sectores_excluidos ?? [])];
+          if (!matchesIndustry(org, b.sectores ?? [], excluidos)) { descartadas++; continue; }
+          const row = await queryOne<{ id: string }>(
+            `INSERT INTO target_accounts
+               (client_id, apollo_id, name, domain, website_url, linkedin_url, industry,
+                keywords, employees, revenue, founded_year, city, state, country, segments)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+             ON CONFLICT (client_id, apollo_id) DO NOTHING
+             RETURNING id`,
+            [
+              clientId, org.id, org.name, org.domain, org.websiteUrl, org.linkedinUrl,
+              org.industry, org.keywords, org.employees, org.revenue, org.foundedYear,
+              org.city, org.state, org.country, [vertical],
+            ],
+          );
+          if (row) { nuevas++; deEsta++; } else repetidas++;
+        }
+        if (page >= res.totalPages) break;
+      }
+      console.log(`   ${vertical.padEnd(28)} ${b.nombre.padEnd(28)} +${deEsta}`);
+    }
+  }
+
+  console.log(`\n  ✅ Cuentas nuevas: ${nuevas}   Repetidas: ${repetidas}   Descartadas por sector: ${descartadas}`);
+  console.log(`     Créditos consumidos: ~${gastadas}\n`);
+}
+
+/** Lista las cuentas guardadas, para revisarlas a mano antes de nada. */
+async function listAccounts(slug: string, flags: Map<string, string>) {
+  const clientId = await clientIdBySlug(slug);
+  const seg = flags.get('segmento') ?? null;
+  const rows = await query<{
+    name: string; industry: string | null; employees: number | null;
+    city: string | null; country: string | null; domain: string | null; segments: string[];
+  }>(
+    `SELECT name, industry, employees, city, country, domain, segments
+       FROM target_accounts
+      WHERE client_id=$1 AND ($2::text IS NULL OR $2 = ANY(segments))
+      ORDER BY segments[1], employees DESC NULLS LAST
+      LIMIT $3`,
+    [clientId, seg, Number(flags.get('limite') ?? 40)],
+  );
+  if (rows.length === 0) { console.log('  Sin cuentas todavía.'); return; }
+  console.table(rows.map((r) => ({
+    cuenta: r.name.slice(0, 34),
+    vertical: r.segments[0] ?? '—',
+    sector: (r.industry ?? '—').slice(0, 22),
+    empl: r.employees ?? '—',
+    ubicación: [r.city, r.country].filter(Boolean).join(', ').slice(0, 24),
+    dominio: r.domain ?? '—',
+  })));
+  const total = await queryOne<{ n: number }>(
+    `SELECT count(*)::int AS n FROM target_accounts WHERE client_id=$1`, [clientId]);
+  console.log(`\n  Mostrando ${rows.length} de ${total?.n ?? 0} cuentas.\n`);
+}
+
+
+/** Aplica la lista de exclusión a las cuentas ya importadas. No llama a Apollo. */
+async function pruneAccounts(slug: string) {
+  const clientId = await clientIdBySlug(slug);
+  const rows = await query<{ id: string; name: string; industry: string | null; keywords: string[] }>(
+    `SELECT id, name, industry, keywords FROM target_accounts WHERE client_id=$1 AND status <> 'discarded'`,
+    [clientId],
+  );
+  let fuera = 0;
+  for (const r of rows) {
+    const hay = [r.industry ?? '', ...(r.keywords ?? [])].join(' ').toLowerCase();
+    const motivo = SECTORES_EXCLUIDOS_POR_DEFECTO.find((d) => hay.includes(d.toLowerCase()));
+    if (!motivo) continue;
+    await query(
+      `UPDATE target_accounts SET status='discarded', notes=$2 WHERE id=$1`,
+      [r.id, `descartada automáticamente: sector "${motivo}"`],
+    );
+    fuera++;
+  }
+  console.log(`\n  Revisadas ${rows.length} cuentas. Descartadas ${fuera} por sector no comprador.`);
+  console.log(`  Créditos consumidos: 0\n`);
+}
+
 const [command, ...rest] = process.argv.slice(2);
 const { positional, flags } = parseFlags(rest);
 
 try {
   switch (command) {
+    case 'import-accounts':  if (positional.length < 2) usage(); await importAccounts(positional[0]!, positional[1]!, flags); break;
+    case 'prune-accounts':   if (!positional[0]) usage(); await pruneAccounts(positional[0]); break;
+    case 'list-accounts':    if (!positional[0]) usage(); await listAccounts(positional[0], flags); break;
     case 'plan':             if (positional.length < 2) usage(); await plan(positional[0]!, positional[1]!, flags); break;
     case 'apollo-search':    if (!positional[0]) usage(); await apolloSearch(positional[0], flags); break;
     case 'apollo-import':    if (!positional[0]) usage(); await apolloImport(positional[0], flags); break;

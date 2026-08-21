@@ -246,3 +246,122 @@ export function batchIds(ids: string[], size = ENRICH_BATCH_SIZE): string[][] {
   for (let i = 0; i < ids.length; i += size) out.push(ids.slice(i, i + size));
   return out;
 }
+
+// ── Búsqueda de organizaciones ───────────────────────────────────
+//
+// Endpoint distinto del que documenta Apollo para "Organization Search":
+// la documentación describe `mixed_companies/search`, que en los planes Free
+// está bloqueado. `organizations/search` sí responde, devuelve los mismos
+// campos útiles y es el que se usa aquí.
+//
+// A diferencia de la búsqueda de personas, esta SÍ consume: 1 crédito por
+// página de hasta 100 resultados. Sale barata comparada con enriquecer, pero
+// no es gratis: conviene pedir per_page=100 siempre, porque una página de 10
+// cuesta lo mismo que una de 100.
+
+export interface ApolloOrgFilters {
+  locations?: string[];
+  notLocations?: string[];
+  keywordTags?: string[];
+  numEmployeesRanges?: string[];
+  page?: number;
+  perPage?: number;
+}
+
+export interface ApolloOrganisation {
+  id: string;
+  name: string;
+  domain: string | null;
+  websiteUrl: string | null;
+  linkedinUrl: string | null;
+  industry: string | null;
+  keywords: string[];
+  employees: number | null;
+  revenue: number | null;
+  foundedYear: number | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+}
+
+export interface OrgSearchResult {
+  organisations: ApolloOrganisation[];
+  page: number;
+  totalEntries: number;
+  totalPages: number;
+}
+
+interface RawOrgResponse {
+  organizations?: Array<Record<string, unknown>>;
+  pagination?: { page: number; total_entries: number; total_pages: number };
+}
+
+export async function searchOrganisations(f: ApolloOrgFilters): Promise<OrgSearchResult> {
+  const body: Record<string, unknown> = {
+    page: Math.min(f.page ?? 1, SEARCH_MAX_PAGES),
+    // Siempre 100: la unidad de cobro es la página, no el resultado.
+    per_page: f.perPage ?? SEARCH_PAGE_SIZE,
+  };
+  if (f.locations?.length) body.organization_locations = f.locations;
+  if (f.notLocations?.length) body.organization_not_locations = f.notLocations;
+  if (f.keywordTags?.length) body.q_organization_keyword_tags = f.keywordTags;
+  if (f.numEmployeesRanges?.length) body.organization_num_employees_ranges = f.numEmployeesRanges;
+
+  const raw = await post<RawOrgResponse>('/organizations/search', body);
+  const str = (v: unknown) => (typeof v === 'string' && v.length ? v : null);
+  const num = (v: unknown) => (typeof v === 'number' ? v : null);
+
+  return {
+    organisations: (raw.organizations ?? []).map((o) => ({
+      id: String(o.id ?? ''),
+      name: String(o.name ?? ''),
+      domain: str(o.primary_domain),
+      websiteUrl: str(o.website_url),
+      linkedinUrl: str(o.linkedin_url),
+      industry: str(o.industry),
+      keywords: Array.isArray(o.keywords) ? (o.keywords as string[]).slice(0, 25) : [],
+      employees: num(o.estimated_num_employees),
+      revenue: num(o.organization_revenue),
+      foundedYear: num(o.founded_year),
+      city: str(o.city),
+      state: str(o.state),
+      country: str(o.country),
+    })),
+    page: raw.pagination?.page ?? 1,
+    totalEntries: raw.pagination?.total_entries ?? 0,
+    totalPages: raw.pagination?.total_pages ?? 0,
+  };
+}
+
+/**
+ * Los filtros por palabra clave de Apollo son laxos: buscar "family office"
+ * devuelve también bufetes, consultoras de selección y empresas de eventos que
+ * mencionan la expresión. Filtrar por sector en local no cuesta créditos —la
+ * página ya está pagada— y quita la mayor parte del ruido.
+ */
+export function matchesIndustry(
+  org: ApolloOrganisation,
+  allowed: string[],
+  denied: string[] = [],
+): boolean {
+  const hay = [org.industry ?? '', ...org.keywords].join(' ').toLowerCase();
+  // La exclusión manda sobre la inclusión: una fundación de certificación
+  // agraria menciona "agriculture" en cada línea y pasaría el filtro por
+  // palabras, pero no compra fincas.
+  if (denied.some((d) => hay.includes(d.toLowerCase()))) return false;
+  if (allowed.length === 0) return true;
+  return allowed.some((a) => hay.includes(a.toLowerCase()));
+}
+
+/** Sectores que nunca son contraparte en originación de operaciones. */
+export const SECTORES_EXCLUIDOS_POR_DEFECTO = [
+  'nonprofit organization',
+  'non-profit',
+  'staffing & recruiting',
+  'legal services',
+  'events services',
+  'higher education',
+  'government administration',
+  'newspapers',
+  'public relations',
+];

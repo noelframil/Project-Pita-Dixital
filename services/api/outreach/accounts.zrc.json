@@ -1,0 +1,102 @@
+{
+  "_nota": "Búsqueda de CUENTAS objetivo (organizations/search, disponible en plan Free). 1 crédito por página de 100. 'sectores' filtra en local sin coste: los filtros por palabra clave de Apollo son laxos y cuelan bufetes y consultoras.",
+
+  "hotelero": {
+    "prioridad": 1,
+    "busquedas": [
+      {
+        "nombre": "hotel-inversores-es",
+        "keywords": ["hotel investment", "hospitality investment", "hotel management company"],
+        "locations": ["Spain"],
+        "employees": ["11,50", "51,200", "201,500"],
+        "sectores": ["hospitality", "real estate", "investment management", "leisure", "travel"]
+      },
+      {
+        "nombre": "hotel-inversores-us-florida",
+        "keywords": ["hotel investment", "hospitality real estate"],
+        "locations": ["Florida, United States", "New York, United States"],
+        "employees": ["11,50", "51,200", "201,500"],
+        "sectores": ["hospitality", "real estate", "investment management"]
+      }
+    ]
+  },
+
+  "inmobiliario": {
+    "prioridad": 1,
+    "busquedas": [
+      {
+        "nombre": "family-office-es",
+        "keywords": ["family office", "gestion de patrimonios", "wealth management"],
+        "locations": ["Spain"],
+        "employees": ["1,10", "11,50", "51,200"],
+        "sectores": ["investment management", "financial services", "real estate", "venture capital", "banking"]
+      },
+      {
+        "nombre": "patrimonial-prime-es",
+        "keywords": ["real estate investment", "socimi", "patrimonial"],
+        "locations": ["Spain"],
+        "employees": ["11,50", "51,200", "201,500"],
+        "sectores": ["real estate", "investment management", "financial services"]
+      },
+      {
+        "nombre": "family-office-latam",
+        "keywords": ["family office", "wealth management"],
+        "locations": ["Mexico", "Colombia", "Panama"],
+        "employees": ["1,10", "11,50", "51,200"],
+        "sectores": ["investment management", "financial services", "banking"]
+      }
+    ]
+  },
+
+  "agroindustria": {
+    "prioridad": 1,
+    "busquedas": [
+      {
+        "nombre": "farmland-funds-eu",
+        "keywords": ["farmland", "agricultural investment", "agribusiness investment", "real assets"],
+        "locations": ["Spain", "Portugal", "United Kingdom", "Netherlands"],
+        "employees": ["1,10", "11,50", "51,200", "201,500"],
+        "sectores": ["investment management", "farming", "financial services", "food & beverages", "agriculture"]
+      }
+    ]
+  },
+
+  "m-a-y-situaciones-especiales": {
+    "prioridad": 2,
+    "busquedas": [
+      {
+        "nombre": "special-situations-es",
+        "keywords": ["private equity", "special situations", "distressed", "turnaround"],
+        "locations": ["Spain"],
+        "employees": ["1,10", "11,50", "51,200"],
+        "sectores": ["investment management", "venture capital", "financial services"]
+      }
+    ]
+  },
+
+  "mandatos-de-compra": {
+    "prioridad": 2,
+    "busquedas": [
+      {
+        "nombre": "sanidad-privada-es",
+        "keywords": ["clinica", "hospital privado", "healthcare services", "dental clinic"],
+        "locations": ["Spain"],
+        "employees": ["51,200", "201,500", "501,1000"],
+        "sectores": ["hospital & health care", "medical practice", "health", "wellness & fitness"]
+      }
+    ]
+  },
+
+  "levantamiento-de-capital": {
+    "prioridad": 3,
+    "busquedas": [
+      {
+        "nombre": "vc-deeptech-eu",
+        "keywords": ["venture capital", "deep tech", "seed fund"],
+        "locations": ["Spain", "United Kingdom", "France", "Germany"],
+        "employees": ["1,10", "11,50"],
+        "sectores": ["venture capital", "investment management", "financial services"]
+      }
+    ]
+  }
+}
