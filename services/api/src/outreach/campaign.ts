@@ -92,7 +92,15 @@ export async function runCampaign(
        FROM prospects p
       WHERE p.client_id = $1
         AND p.status = 'active'
-        AND ($2::text IS NULL OR $2 = ANY(p.segments))
+        -- Comparación normalizada, no exacta. Las campañas heredan el nombre
+        -- del vertical del pipeline ("Agroindustria", "M&A y situaciones
+        -- especiales") y los prospectos llegan con el slug del CLI. Comparar
+        -- literalmente no cruza nada, y el síntoma es una campaña que dice
+        -- "0 candidatos" sin ningún error: parece que no hay nadie.
+        AND ($2::text IS NULL OR EXISTS (
+              SELECT 1 FROM unnest(p.segments) AS seg
+               WHERE lower(regexp_replace(seg,   '[^a-zA-Z0-9]+', '-', 'g'))
+                   = lower(regexp_replace($2::text, '[^a-zA-Z0-9]+', '-', 'g'))))
         AND NOT EXISTS (
               SELECT 1 FROM suppression s
                WHERE s.client_id = p.client_id AND lower(s.email) = lower(p.email))

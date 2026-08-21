@@ -1,7 +1,8 @@
 /**
  * CLI de captación.
  *
- *   npm run outreach -- import-accounts <slug> <accounts.json> [--prioridad 1] [--paginas 1] [--live]
+ *   npm run outreach -- import-csv      <slug> <lista.csv> --segmento <v> [--fuente apollo-ui]
+  npm run outreach -- import-accounts <slug> <accounts.json> [--prioridad 1] [--paginas 1] [--live]
   npm run outreach -- prune-accounts  <slug>
   npm run outreach -- list-accounts   <slug> [--segmento <v>] [--limite 40]
   npm run outreach -- plan           <slug> <segments.json> [--creditos 95]
@@ -26,6 +27,7 @@ import { runCampaign } from '../outreach/campaign.js';
 function usage(): never {
   console.log(`
 Uso:
+  npm run outreach -- import-csv      <slug> <lista.csv> --segmento <v> [--fuente apollo-ui]
   npm run outreach -- import-accounts <slug> <accounts.json> [--prioridad 1] [--paginas 1] [--live]
   npm run outreach -- prune-accounts  <slug>
   npm run outreach -- list-accounts   <slug> [--segmento <v>] [--limite 40]
@@ -528,11 +530,137 @@ async function pruneAccounts(slug: string) {
   console.log(`  Créditos consumidos: 0\n`);
 }
 
+
+/**
+ * Importa prospectos desde CSV.
+ *
+ * Es la vía que funciona sin API de pago: Apollo deja revelar emails y
+ * exportar desde su interfaz web aunque el endpoint esté bloqueado. También
+ * sirve para una lista propia, la de un evento o la de un socio.
+ *
+ * Se valida de forma estricta a propósito. Una dirección inventada no es un
+ * fallo silencioso: rebota, y los rebotes duros queman la reputación del
+ * dominio de quien envía. Un dominio quemado cuesta meses; una fila descartada
+ * no cuesta nada.
+ */
+const EMAIL_RE = /^[^\s@,;<>()"']+@[^\s@,;<>()"']+\.[a-z]{2,}$/i;
+
+/** Direcciones de buzón genérico: no son una persona y disparan quejas. */
+const BUZONES_GENERICOS = [
+  'info', 'contacto', 'contact', 'hello', 'hola', 'admin', 'sales', 'ventas',
+  'support', 'soporte', 'noreply', 'no-reply', 'privacy', 'legal', 'rgpd',
+  'gdpr', 'webmaster', 'postmaster', 'abuse', 'marketing', 'press', 'prensa',
+];
+
+function esBuzonGenerico(email: string): boolean {
+  const local = email.split('@')[0]?.toLowerCase() ?? '';
+  return BUZONES_GENERICOS.includes(local);
+}
+
+/** Lector de CSV con comillas. Sin dependencias: es un formato simple. */
+function parseCsv(text: string): string[][] {
+  const filas: string[][] = [];
+  let campo = '', fila: string[] = [], enComillas = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+    if (enComillas) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { campo += '"'; i++; } else enComillas = false;
+      } else campo += ch;
+    } else if (ch === '"') enComillas = true;
+    else if (ch === ',') { fila.push(campo); campo = ''; }
+    else if (ch === '\n') { fila.push(campo); filas.push(fila); fila = []; campo = ''; }
+    else if (ch !== '\r') campo += ch;
+  }
+  if (campo || fila.length) { fila.push(campo); filas.push(fila); }
+  return filas.filter((f) => f.some((c) => c.trim()));
+}
+
+/** Localiza columnas por varios nombres posibles: cada export usa los suyos. */
+function columna(cabecera: string[], ...candidatos: string[]): number {
+  const norm = cabecera.map((h) => h.trim().toLowerCase().replace(/[\s_-]+/g, ''));
+  for (const c of candidatos) {
+    const i = norm.indexOf(c.toLowerCase().replace(/[\s_-]+/g, ''));
+    if (i >= 0) return i;
+  }
+  return -1;
+}
+
+async function importCsv(slug: string, path: string, flags: Map<string, string>) {
+  const clientId = await clientIdBySlug(slug);
+  const segmento = flags.get('segmento');
+  if (!segmento) { console.error('❌ Falta --segmento (p. ej. --segmento agroindustria)'); process.exit(1); }
+  const fuente = flags.get('fuente') ?? 'csv';
+
+  const filas = parseCsv(await readFile(path, 'utf8'));
+  if (filas.length < 2) { console.error('❌ El CSV no tiene filas de datos.'); process.exit(1); }
+
+  const cab = filas[0]!;
+  const iEmail = columna(cab, 'email', 'emailaddress', 'workemail', 'correo');
+  if (iEmail < 0) {
+    console.error(`❌ No encuentro columna de email. Cabeceras: ${cab.join(', ')}`);
+    process.exit(1);
+  }
+  const iNombre = columna(cab, 'name', 'fullname', 'nombre');
+  const iPila   = columna(cab, 'firstname', 'first name', 'nombrepila');
+  const iApe    = columna(cab, 'lastname', 'last name', 'apellidos');
+  const iEmpresa= columna(cab, 'company', 'organization', 'organisation', 'companyname', 'empresa');
+  const iCargo  = columna(cab, 'title', 'jobtitle', 'position', 'cargo');
+
+  // Supresión en memoria: comprobarlo por fila haría una consulta por línea.
+  const suprimidos = new Set(
+    (await query<{ email: string }>(
+      `SELECT lower(email) AS email FROM suppression WHERE client_id=$1`, [clientId],
+    )).map((r) => r.email),
+  );
+
+  let nuevos = 0, repetidos = 0;
+  const rechazos: Record<string, number> = {};
+  const rechazar = (m: string) => { rechazos[m] = (rechazos[m] ?? 0) + 1; };
+
+  for (const fila of filas.slice(1)) {
+    const email = (fila[iEmail] ?? '').trim().toLowerCase();
+    if (!email) { rechazar('sin email'); continue; }
+    if (!EMAIL_RE.test(email)) { rechazar('formato inválido'); continue; }
+    // Apollo exporta este marcador cuando el email no está desbloqueado.
+    if (email.includes('email_not_unlocked')) { rechazar('email no desbloqueado en Apollo'); continue; }
+    if (esBuzonGenerico(email)) { rechazar('buzón genérico (info@, sales@…)'); continue; }
+    if (suprimidos.has(email)) { rechazar('en lista de supresión'); continue; }
+
+    const nombre = iNombre >= 0 && fila[iNombre]?.trim()
+      ? fila[iNombre]!.trim()
+      : [iPila >= 0 ? fila[iPila] : '', iApe >= 0 ? fila[iApe] : ''].filter((x) => x?.trim()).join(' ').trim();
+
+    const row = await queryOne<{ id: string }>(
+      `INSERT INTO prospects
+         (client_id, email, display_name, organisation, role_title, segments, source, legal_basis)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'legitimate_interest')
+       ON CONFLICT (client_id, email) DO NOTHING
+       RETURNING id`,
+      [
+        clientId, email, nombre || null,
+        iEmpresa >= 0 ? (fila[iEmpresa]?.trim() || null) : null,
+        iCargo >= 0 ? (fila[iCargo]?.trim() || null) : null,
+        [segmento], fuente,
+      ],
+    );
+    if (row) nuevos++; else repetidos++;
+  }
+
+  console.log(`\n  ✅ Prospectos nuevos: ${nuevos}   Ya estaban: ${repetidos}`);
+  if (Object.keys(rechazos).length) {
+    console.log(`\n  Descartados:`);
+    for (const [m, n] of Object.entries(rechazos)) console.log(`     ${String(n).padStart(4)}  ${m}`);
+  }
+  console.log(`\n  Revisa antes de enviar:  npm run outreach -- stats ${slug}\n`);
+}
+
 const [command, ...rest] = process.argv.slice(2);
 const { positional, flags } = parseFlags(rest);
 
 try {
   switch (command) {
+    case 'import-csv':       if (positional.length < 2) usage(); await importCsv(positional[0]!, positional[1]!, flags); break;
     case 'import-accounts':  if (positional.length < 2) usage(); await importAccounts(positional[0]!, positional[1]!, flags); break;
     case 'prune-accounts':   if (!positional[0]) usage(); await pruneAccounts(positional[0]); break;
     case 'list-accounts':    if (!positional[0]) usage(); await listAccounts(positional[0], flags); break;
