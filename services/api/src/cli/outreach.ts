@@ -1,7 +1,8 @@
 /**
  * CLI de captación.
  *
- *   npm run outreach -- apollo-search  <slug> --titles "..." --locations "..."
+ *   npm run outreach -- plan           <slug> <segments.json> [--creditos 95]
+  npm run outreach -- apollo-search  <slug> --titles "..." --locations "..."
  *   npm run outreach -- apollo-import  <slug> --segment <v> --titles "..." [--max N]
  *   npm run outreach -- make-campaigns <slug> <pipeline.json>
  *   npm run outreach -- list-campaigns <slug>
@@ -19,6 +20,7 @@ import { runCampaign } from '../outreach/campaign.js';
 function usage(): never {
   console.log(`
 Uso:
+  npm run outreach -- plan           <slug> <segments.json> [--creditos 95]
   npm run outreach -- apollo-search  <slug> --titles "CEO,Director" [--locations "Spain"] [--seniorities "c_suite,vp"]
   npm run outreach -- apollo-import  <slug> --segment <vertical> --titles "..." [--locations "..."] [--max 100]
   npm run outreach -- make-campaigns <slug> <pipeline.json>
@@ -283,11 +285,106 @@ async function stats(slug: string) {
   console.log(`  Envíos: ${envios.length ? envios.map((e) => `${e.status}=${e.n}`).join('  ') : '—'}\n`);
 }
 
+
+interface SegmentFile {
+  [vertical: string]: {
+    prioridad: number;
+    operaciones_en_mercado: number;
+    perfil: string;
+    busquedas: Array<{
+      nombre: string;
+      person_titles?: string[];
+      person_seniorities?: string[];
+      person_locations?: string[];
+      organization_locations?: string[];
+    }>;
+  };
+}
+
+/**
+ * Dimensiona todas las búsquedas sin gastar créditos.
+ *
+ * La búsqueda de Apollo es gratuita y ya devuelve `has_email`, así que se puede
+ * saber cuánto costaría una campaña antes de pagarla. Con un saldo pequeño esto
+ * no es una comodidad: es la diferencia entre cubrir las operaciones que están
+ * en mercado o quedarse sin créditos en la primera búsqueda amplia.
+ */
+async function plan(slug: string, path: string, flags: Map<string, string>) {
+  await clientIdBySlug(slug);
+  const raw = JSON.parse(await readFile(path, 'utf8')) as SegmentFile;
+  const presupuesto = Number(flags.get('creditos') ?? 0);
+
+  const filas: Array<{
+    vertical: string; prioridad: number; enMercado: number;
+    busqueda: string; total: number; conEmailPagina: number; ratio: number;
+  }> = [];
+
+  for (const [vertical, cfg] of Object.entries(raw)) {
+    if (vertical.startsWith('_')) continue;
+    for (const b of cfg.busquedas) {
+      try {
+        const res = await searchPeople({
+          personTitles: b.person_titles,
+          personSeniorities: b.person_seniorities,
+          personLocations: b.person_locations,
+          organizationLocations: b.organization_locations,
+          perPage: 100,
+        });
+        const conEmail = res.people.filter((p) => p.hasEmail).length;
+        const ratio = res.people.length ? conEmail / res.people.length : 0;
+        filas.push({
+          vertical, prioridad: cfg.prioridad, enMercado: cfg.operaciones_en_mercado,
+          busqueda: b.nombre, total: res.totalEntries, conEmailPagina: conEmail, ratio,
+        });
+      } catch (err) {
+        console.error(`  ⚠ ${b.nombre}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
+  if (filas.length === 0) { console.log('  Sin resultados.'); return; }
+
+  console.log('\n  Créditos consumidos por este análisis: 0\n');
+  console.table(filas.map((f) => ({
+    vertical: f.vertical,
+    prio: f.prioridad,
+    'en mercado': f.enMercado,
+    búsqueda: f.busqueda,
+    'universo': f.total,
+    'con email (muestra 100)': f.conEmailPagina,
+    'ratio': `${Math.round(f.ratio * 100)}%`,
+  })));
+
+  if (presupuesto > 0) {
+    // Reparto proporcional a las operaciones que están en mercado, y solo
+    // entre las de prioridad 1: con saldo corto, repartir entre todo garantiza
+    // no cubrir bien ninguna.
+    const p1 = filas.filter((f) => f.prioridad === 1);
+    const pesoTotal = p1.reduce((a, f) => a + f.enMercado, 0) || 1;
+    console.log(`\n  Reparto sugerido de ${presupuesto} créditos (solo prioridad 1):\n`);
+    let asignado = 0;
+    for (const f of p1) {
+      const cuota = Math.floor((presupuesto * f.enMercado) / pesoTotal / p1.filter((x) => x.vertical === f.vertical).length);
+      asignado += cuota;
+      console.log(`    ${f.vertical.padEnd(16)} ${f.busqueda.padEnd(24)} ~${cuota} créditos`);
+    }
+    console.log(`\n    Sin asignar: ${presupuesto - asignado} (deja margen: enriquecer no siempre encuentra email)\n`);
+    const p23 = filas.filter((f) => f.prioridad > 1).map((f) => f.vertical);
+    if (p23.length) {
+      console.log(`  Fuera del reparto por ahora: ${[...new Set(p23)].join(', ')}`);
+      console.log(`  Motivo: menos operaciones en comercialización. Cuando entren, se reordena.\n`);
+    }
+  } else {
+    console.log('\n  Añade --creditos 95 para ver el reparto sugerido.\n');
+  }
+}
+
 const [command, ...rest] = process.argv.slice(2);
 const { positional, flags } = parseFlags(rest);
 
 try {
   switch (command) {
+    case 'plan':             if (positional.length < 2) usage(); await plan(positional[0]!, positional[1]!, flags); break;
     case 'apollo-search':    if (!positional[0]) usage(); await apolloSearch(positional[0], flags); break;
     case 'apollo-import':    if (!positional[0]) usage(); await apolloImport(positional[0], flags); break;
     case 'make-campaigns':   if (positional.length < 2) usage(); await makeCampaigns(positional[0]!, positional[1]!); break;

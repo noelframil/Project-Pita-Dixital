@@ -99,6 +99,23 @@ async function post<T>(path: string, body: unknown, queryParams?: Record<string,
     // 429 es el límite de ritmo; los 5xx son suyos. El resto es culpa nuestra
     // y reintentarlo sale igual de mal, solo que más tarde.
     const retryable = res.status === 429 || res.status >= 500;
+
+    // Un 401/403 aquí casi nunca es la clave mal copiada: es que el plan no
+    // habilita ese endpoint. La documentación de Apollo dice literalmente que
+    // "el acceso a la API depende de tu plan" sin concretar cuál, así que
+    // conviene nombrar la causa probable en vez de dejar un 403 pelado.
+    if (res.status === 401 || res.status === 403) {
+      throw new ApolloError(
+        `Apollo ${res.status}: la clave existe pero este endpoint está denegado. ` +
+          `Suele significar que el plan no incluye acceso a la API (el plan Free ` +
+          `la tiene limitada o desactivada según la cuenta). Compruébalo en ` +
+          `https://developer.apollo.io/#/keys y, si hace falta, con soporte de Apollo. ` +
+          `Detalle: ${text.slice(0, 150)}`,
+        res.status,
+        false,
+      );
+    }
+
     throw new ApolloError(
       `Apollo ${res.status}: ${text.slice(0, 200)}`,
       res.status,

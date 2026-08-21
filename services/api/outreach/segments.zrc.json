@@ -1,0 +1,99 @@
+{
+  "_nota": "Perfiles de contraparte tomados del propio pipeline de ZRC. 'prioridad' ordena el gasto de créditos: 1 = operaciones en comercialización, que son las que necesitan comprador ahora.",
+
+  "hotelero": {
+    "prioridad": 1,
+    "operaciones_en_mercado": 2,
+    "perfil": "Inversores hoteleros y operadores de segmento económico (Madrid). Capital institucional norteamericano y family offices con exposición a Florida.",
+    "busquedas": [
+      {
+        "nombre": "hotelero-es",
+        "person_titles": ["Head of Acquisitions", "Investment Director", "Asset Manager", "Director de Inversiones", "Head of Real Estate"],
+        "person_seniorities": ["c_suite", "vp", "director", "owner", "founder"],
+        "person_locations": ["Spain"]
+      },
+      {
+        "nombre": "hotelero-us-florida",
+        "person_titles": ["Managing Director", "Principal", "Head of Acquisitions", "Investment Officer"],
+        "person_seniorities": ["c_suite", "vp", "director", "partner"],
+        "person_locations": ["Florida, United States", "New York, United States"]
+      }
+    ]
+  },
+
+  "inmobiliario": {
+    "prioridad": 1,
+    "operaciones_en_mercado": 3,
+    "perfil": "Patrimonialistas y family offices con foco prime. Compradores privados de alto patrimonio nacionales e internacionales, con canal latinoamericano activo. Promotores y fondos de suelo en costa mediterránea.",
+    "busquedas": [
+      {
+        "nombre": "inmo-family-office-es",
+        "person_titles": ["Family Office", "Wealth Manager", "Investment Director", "Director de Inversiones", "Patrimonio"],
+        "person_seniorities": ["c_suite", "owner", "founder", "director", "partner"],
+        "person_locations": ["Spain"]
+      },
+      {
+        "nombre": "inmo-latam-hnw",
+        "person_titles": ["Family Office", "Wealth Management", "Private Banking", "Investment Advisor"],
+        "person_seniorities": ["c_suite", "owner", "founder", "director"],
+        "person_locations": ["Mexico", "Colombia", "Panama", "Venezuela"]
+      }
+    ]
+  },
+
+  "agroindustria": {
+    "prioridad": 1,
+    "operaciones_en_mercado": 3,
+    "perfil": "Fondos de farmland europeos e inversores institucionales agrícolas. Inversores agroalimentarios de producto de alto valor. Inversores con experiencia en MENA e infraestructura hídrica.",
+    "busquedas": [
+      {
+        "nombre": "agro-farmland-eu",
+        "person_titles": ["Farmland", "Real Assets", "Agricultural Investment", "Head of Investments", "Portfolio Manager"],
+        "person_seniorities": ["c_suite", "vp", "director", "partner"],
+        "person_locations": ["Spain", "Portugal", "United Kingdom", "Netherlands"]
+      }
+    ]
+  },
+
+  "m-a-y-situaciones-especiales": {
+    "prioridad": 2,
+    "operaciones_en_mercado": 2,
+    "perfil": "Fondos de situaciones especiales e inversores industriales. Grupos de restauración y franquicia cómodos en minoría. Consolidadores de talleres y del sector constructor.",
+    "busquedas": [
+      {
+        "nombre": "ma-special-situations-es",
+        "person_titles": ["M&A Director", "Corporate Development", "Investment Director", "Head of M&A", "Director de Desarrollo Corporativo"],
+        "person_seniorities": ["c_suite", "vp", "director", "partner"],
+        "person_locations": ["Spain"]
+      }
+    ]
+  },
+
+  "mandatos-de-compra": {
+    "prioridad": 2,
+    "operaciones_en_mercado": 1,
+    "perfil": "Originación de compañías del sector sanitario privado en España. Productores con volumen y trazabilidad exportadora. Aquí la contraparte es quien VENDE: dueños y fundadores, no fondos.",
+    "busquedas": [
+      {
+        "nombre": "compra-sanidad-es",
+        "person_titles": ["CEO", "Founder", "Owner", "Director General", "Consejero Delegado"],
+        "person_seniorities": ["owner", "founder", "c_suite"],
+        "person_locations": ["Spain"]
+      }
+    ]
+  },
+
+  "levantamiento-de-capital": {
+    "prioridad": 3,
+    "operaciones_en_mercado": 0,
+    "perfil": "Fondos de venture europeos en deep tech y software/IA aplicada, y family offices. Ninguna operación está aún en comercialización: gastar créditos aquí es adelantarse.",
+    "busquedas": [
+      {
+        "nombre": "vc-deeptech-eu",
+        "person_titles": ["Partner", "Principal", "Investment Manager", "Venture Partner"],
+        "person_seniorities": ["partner", "c_suite", "vp", "director"],
+        "person_locations": ["Spain", "United Kingdom", "France", "Germany"]
+      }
+    ]
+  }
+}
