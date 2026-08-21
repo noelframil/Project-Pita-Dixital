@@ -8,7 +8,8 @@
   npm run outreach -- plan           <slug> <segments.json> [--creditos 95]
   npm run outreach -- apollo-search  <slug> --titles "..." --locations "..."
  *   npm run outreach -- apollo-import  <slug> --segment <v> --titles "..." [--max N]
- *   npm run outreach -- make-campaigns <slug> <pipeline.json>
+ *   npm run outreach -- make-deal-campaigns <slug> <deals.json> --firmante "Nombre, cargo"
+  npm run outreach -- make-campaigns <slug> <pipeline.json>
  *   npm run outreach -- list-campaigns <slug>
  *   npm run outreach -- approve-campaign <slug> <campaña> "<quien aprueba>"
  *   npm run outreach -- run-campaign <slug> <campaña> [--live] [--limit N]
@@ -23,6 +24,7 @@ import {
   SECTORES_EXCLUIDOS_POR_DEFECTO, ApolloError,
 } from '../outreach/apollo.js';
 import { runCampaign } from '../outreach/campaign.js';
+import { datoDuroDe } from '../outreach/subject.js';
 
 function usage(): never {
   console.log(`
@@ -34,6 +36,7 @@ Uso:
   npm run outreach -- plan           <slug> <segments.json> [--creditos 95]
   npm run outreach -- apollo-search  <slug> --titles "CEO,Director" [--locations "Spain"] [--seniorities "c_suite,vp"]
   npm run outreach -- apollo-import  <slug> --segment <vertical> --titles "..." [--locations "..."] [--max 100]
+  npm run outreach -- make-deal-campaigns <slug> <deals.json> --firmante "Nombre, cargo"
   npm run outreach -- make-campaigns <slug> <pipeline.json>
   npm run outreach -- list-campaigns <slug>
   npm run outreach -- approve-campaign <slug> <campaña> "<quien aprueba>"
@@ -655,6 +658,107 @@ async function importCsv(slug: string, path: string, flags: Map<string, string>)
   console.log(`\n  Revisa antes de enviar:  npm run outreach -- stats ${slug}\n`);
 }
 
+
+interface Deal {
+  ref: string; vertical: string; estado: string; estado_txt: string;
+  titulo: string; tipo: string; geo: string;
+  precio: string | null; descripcion: string; contraparte: string | null;
+}
+
+/**
+ * Extrae el dato duro que define la operación: hectáreas, llaves, metros.
+ * Va en el asunto porque es lo único que un inversor necesita para decidir en
+ * dos segundos si sigue leyendo. "Agroindustria — 5 operaciones en cartera"
+ * no le dice nada; "700 ha de olivar, Guadalquivir" sí.
+ */
+function datoDuro(d: Deal): string | null {
+  return datoDuroDe(d.descripcion);
+}
+
+function asunto(d: Deal): string {
+  const dato = datoDuro(d);
+  const geo = d.geo.replace(/,?\s*EE\.?\s*UU\.?/i, '').replace(/—\s*/, '').trim();
+  // Sin firma ni "oportunidad": el asunto es el activo.
+  return dato ? `${dato}, ${geo}` : `${d.titulo}, ${geo}`;
+}
+
+/**
+ * Genera una campaña POR OPERACIÓN, no por vertical.
+ *
+ * Mandar el catálogo entero de un vertical se lee como un boletín: siete
+ * activos en un correo dicen "esto va a una lista". Un solo activo, el que
+ * encaja con quien recibe, se lee como una gestión concreta. En originación esa
+ * diferencia es la tasa de respuesta.
+ *
+ * Solo se generan las que están en comercialización: ofrecer algo que aún está
+ * en estructuración quema el contacto para cuando de verdad haya algo.
+ */
+async function makeDealCampaigns(slug: string, path: string, flags: Map<string, string>) {
+  const clientId = await clientIdBySlug(slug);
+  const firmante = flags.get('firmante');
+  if (!firmante) {
+    console.error('❌ Falta --firmante "Nombre Apellido, cargo".');
+    console.error('   La gente responde a personas, no a "Zenith Rise Capital".');
+    process.exit(1);
+  }
+  const deals = (JSON.parse(await readFile(path, 'utf8')) as Deal[])
+    .filter((d) => d.estado === 'market');
+
+  const from = config.OUTREACH_FROM_EMAIL ?? 'pendiente@configurar.example';
+  let n = 0;
+
+  for (const d of deals) {
+    const dato = datoDuro(d);
+    // Una frase con los hechos, sin identificar nada: lo que ya es público en
+    // el documento ciego.
+    const hechos = [
+      dato ? `${dato}.` : null,
+      `${d.tipo}.`,
+      d.geo.startsWith('España') ? 'Ámbito nacional.' : `${d.geo}.`,
+      d.precio ? `Referencia orientativa y no vinculante: ${d.precio}.` : null,
+    ].filter(Boolean).join(' ');
+
+    const cuerpo = `{{first_name}},
+
+{{motivo}}
+
+${hechos}
+
+${d.descripcion.split('.')[0]}.
+
+Es información ciega: no identifica el activo ni a la propiedad. El detalle va tras confidencialidad.
+
+¿Le envío el perfil ciego?
+
+${firmante}
+Zenith Rise Capital`;
+
+    await query(
+      `INSERT INTO campaigns
+         (client_id, name, segment, subject, body_template, from_name, from_email, reply_to, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'draft')
+       ON CONFLICT (client_id, name) DO UPDATE
+         SET subject=EXCLUDED.subject, body_template=EXCLUDED.body_template,
+             segment=EXCLUDED.segment, status='draft'`,
+      [
+        clientId,
+        `deal-${d.ref.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`,
+        d.vertical,
+        asunto(d),
+        cuerpo,
+        firmante.split(',')[0]!.trim(),
+        from,
+        config.OUTREACH_REPLY_TO ?? null,
+      ],
+    );
+    n++;
+    console.log(`  ✅ ${d.vertical.slice(0, 16).padEnd(16)} "${asunto(d)}"`);
+  }
+
+  console.log(`\n  ${n} campañas, una por operación en comercialización.`);
+  console.log(`  Las ${24 - n} que no están en mercado se dejan fuera a propósito.\n`);
+}
+
 const [command, ...rest] = process.argv.slice(2);
 const { positional, flags } = parseFlags(rest);
 
@@ -667,6 +771,7 @@ try {
     case 'plan':             if (positional.length < 2) usage(); await plan(positional[0]!, positional[1]!, flags); break;
     case 'apollo-search':    if (!positional[0]) usage(); await apolloSearch(positional[0], flags); break;
     case 'apollo-import':    if (!positional[0]) usage(); await apolloImport(positional[0], flags); break;
+    case 'make-deal-campaigns': if (positional.length < 2) usage(); await makeDealCampaigns(positional[0]!, positional[1]!, flags); break;
     case 'make-campaigns':   if (positional.length < 2) usage(); await makeCampaigns(positional[0]!, positional[1]!); break;
     case 'list-campaigns':   if (!positional[0]) usage(); await listCampaigns(positional[0]); break;
     case 'approve-campaign': if (positional.length < 3) usage(); await approveCampaign(positional[0]!, positional[1]!, positional[2]!); break;

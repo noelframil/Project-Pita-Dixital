@@ -43,6 +43,25 @@ export interface RunSummary {
   skipReasons: Record<string, number>;
 }
 
+
+/**
+ * La línea de "por qué usted".
+ *
+ * Es la frase que separa una gestión de un envío masivo, y la única que el
+ * destinatario usa para decidir si el correo va dirigido a él. Se construye con
+ * lo que sabemos de verdad —su firma y su cargo—; nunca se inventa un motivo,
+ * porque un halago genérico delata la plantilla más que no decir nada.
+ */
+function motivoDe(p: ProspectRow): string {
+  if (p.organisation && p.role_title) {
+    return `Le escribo por su posición en ${p.organisation}: el perfil de contraparte de esta operación encaja con el tipo de activo que cubren.`;
+  }
+  if (p.organisation) {
+    return `Le escribo porque el perfil de contraparte de esta operación encaja con lo que cubren en ${p.organisation}.`;
+  }
+  return 'Le escribo porque su perfil encaja con la contraparte que busca esta operación.';
+}
+
 /** Personaliza en una sola pasada, igual que el prompt del bot. */
 function compose(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_m, k: string) => vars[k] ?? '');
@@ -152,6 +171,7 @@ export async function runCampaign(
         full_name: prospect.display_name ?? '',
         organisation: prospect.organisation ?? '',
         role_title: prospect.role_title ?? '',
+        motivo: motivoDe(prospect),
       }) + buildFooter(unsubscribeUrl, sourceNote(prospect.source));
 
     try {

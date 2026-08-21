@@ -49,7 +49,11 @@ const schema = z.object({
   /** Freno propio: Apollo permite más, pero un bucle con un fallo cuesta créditos. */
   APOLLO_MAX_ENRICH_PER_RUN: z.coerce.number().int().default(200),
 
+  OUTREACH_PROVIDER: z.enum(['resend', 'mailersend']).default('mailersend'),
   RESEND_API_KEY: z.string().optional(),
+  MAILERSEND_API_KEY: z.string().optional(),
+  /** Cabeceras personalizadas: Professional en adelante. */
+  MAILERSEND_CUSTOM_HEADERS: envBool(false),
   OUTREACH_FROM_EMAIL: z.string().optional(),
   OUTREACH_FROM_NAME: z.string().default('Zenith Rise Capital'),
   OUTREACH_REPLY_TO: z.string().optional(),
