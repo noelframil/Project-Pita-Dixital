@@ -1,7 +1,8 @@
 /**
  * CLI de captación.
  *
- *   npm run outreach -- sync-apollo     <slug> [--segmento <v>] [--paginas 5]
+ *   npm run outreach -- discover-emails <slug> [--segmento <v>] [--por-cuenta 3] [--max-creditos 40] [--live]
+  npm run outreach -- sync-apollo     <slug> [--segmento <v>] [--paginas 5]
   npm run outreach -- import-csv      <slug> <lista.csv> --segmento <v> [--fuente apollo-ui]
   npm run outreach -- import-accounts <slug> <accounts.json> [--prioridad 1] [--paginas 1] [--live]
   npm run outreach -- prune-accounts  <slug>
@@ -26,10 +27,12 @@ import {
 } from '../outreach/apollo.js';
 import { runCampaign } from '../outreach/campaign.js';
 import { datoDuroDe } from '../outreach/subject.js';
+import { domainSearch, mereceLaPena, HunterError } from '../outreach/hunter.js';
 
 function usage(): never {
   console.log(`
 Uso:
+  npm run outreach -- discover-emails <slug> [--segmento <v>] [--por-cuenta 3] [--max-creditos 40] [--live]
   npm run outreach -- sync-apollo     <slug> [--segmento <v>] [--paginas 5]
   npm run outreach -- import-csv      <slug> <lista.csv> --segmento <v> [--fuente apollo-ui]
   npm run outreach -- import-accounts <slug> <accounts.json> [--prioridad 1] [--paginas 1] [--live]
@@ -835,11 +838,117 @@ async function syncApolloContacts(slug: string, flags: Map<string, string>) {
   console.log(`\n  Siguiente:  npm run outreach -- stats ${slug}\n`);
 }
 
+
+/**
+ * Descubre direcciones recorriendo los dominios de las cuentas objetivo.
+ *
+ * Este es el paso que faltaba para que el flujo sea autónomo. Apollo da las
+ * empresas —su búsqueda de organizaciones sí funciona en gratuito— y Hunter da
+ * las personas de cada dominio, con verificación y confianza. Ninguno de los
+ * dos hace falta que sea de pago, y no hay que tocar ninguna interfaz.
+ *
+ * El gasto se acota por adelantado: cada dirección devuelta cuesta un crédito,
+ * y con saldos pequeños una sola empresa grande se lo puede llevar entero. Por
+ * eso el límite es por cuenta y hay tope global.
+ */
+async function discoverEmails(slug: string, flags: Map<string, string>) {
+  const clientId = await clientIdBySlug(slug);
+  const segmento = flags.get('segmento');
+  const porCuenta = Number(flags.get('por-cuenta') ?? 3);
+  const maxCreditos = Number(flags.get('max-creditos') ?? 40);
+  const minConfianza = Number(flags.get('confianza') ?? config.HUNTER_MIN_CONFIDENCE);
+  const seco = flags.get('live') !== 'true';
+
+  const cuentas = await query<{ id: string; name: string; domain: string; segments: string[] }>(
+    `SELECT id, name, domain, segments FROM target_accounts
+      WHERE client_id=$1 AND status='pending' AND domain IS NOT NULL
+        AND ($2::text IS NULL OR $2 = ANY(segments))
+      ORDER BY employees DESC NULLS LAST`,
+    [clientId, segmento ?? null],
+  );
+
+  console.log(`\n  Cuentas con dominio: ${cuentas.length}`);
+  console.log(`  Tope: ${porCuenta} direcciones por cuenta, ${maxCreditos} créditos en total`);
+  console.log(`  Confianza mínima: ${minConfianza}`);
+  if (seco) {
+    console.log(`\n  🟢 ENSAYO: no se llama a Hunter y no se gasta nada.`);
+    console.log(`     Añade --live para ejecutarlo.\n`);
+    return;
+  }
+
+  const suprimidos = new Set(
+    (await query<{ email: string }>(
+      `SELECT lower(email) AS email FROM suppression WHERE client_id=$1`, [clientId],
+    )).map((r) => r.email),
+  );
+
+  let gastados = 0, nuevos = 0, repetidos = 0, sinNada = 0;
+  const rechazos: Record<string, number> = {};
+
+  for (const cuenta of cuentas) {
+    if (gastados >= maxCreditos) { console.log(`\n  ⏸  Tope de créditos alcanzado.`); break; }
+
+    let res;
+    try {
+      res = await domainSearch(cuenta.domain, {
+        limit: Math.min(porCuenta, maxCreditos - gastados),
+        type: 'personal',
+        decisionMaker: true,
+      });
+    } catch (err) {
+      if (err instanceof HunterError && !err.retryable) throw err;
+      console.log(`   ⚠ ${cuenta.name}: ${err instanceof Error ? err.message : err}`);
+      continue;
+    }
+
+    gastados += res.emails.length;
+    if (res.emails.length === 0) { sinNada++; continue; }
+
+    let deEsta = 0;
+    for (const e of res.emails) {
+      const email = e.email.trim().toLowerCase();
+      const juicio = mereceLaPena(e, minConfianza);
+      if (!juicio.ok) { rechazos[juicio.motivo!] = (rechazos[juicio.motivo!] ?? 0) + 1; continue; }
+      if (suprimidos.has(email)) { rechazos['en supresión'] = (rechazos['en supresión'] ?? 0) + 1; continue; }
+
+      const row = await queryOne<{ id: string }>(
+        `INSERT INTO prospects
+           (client_id, email, display_name, organisation, role_title, segments, source, legal_basis, attributes)
+         VALUES ($1,$2,$3,$4,$5,$6,'hunter','legitimate_interest',$7)
+         ON CONFLICT (client_id, email) DO NOTHING
+         RETURNING id`,
+        [
+          clientId, email,
+          [e.firstName, e.lastName].filter(Boolean).join(' ') || null,
+          res.organisation ?? cuenta.name,
+          e.position,
+          cuenta.segments,
+          JSON.stringify({
+            confidence: e.confidence, seniority: e.seniority, department: e.department,
+            verification: e.verificationStatus, decision_maker: e.decisionMaker, domain: cuenta.domain,
+          }),
+        ],
+      );
+      if (row) { nuevos++; deEsta++; } else repetidos++;
+    }
+    if (deEsta > 0) console.log(`   ✉  ${cuenta.name.slice(0, 34).padEnd(34)} +${deEsta}`);
+  }
+
+  console.log(`\n  ✅ Prospectos nuevos: ${nuevos}   Ya estaban: ${repetidos}`);
+  console.log(`     Cuentas sin resultados: ${sinNada}   Créditos consumidos: ~${gastados}`);
+  if (Object.keys(rechazos).length) {
+    console.log(`\n  Descartados:`);
+    for (const [m, n] of Object.entries(rechazos)) console.log(`     ${String(n).padStart(4)}  ${m}`);
+  }
+  console.log();
+}
+
 const [command, ...rest] = process.argv.slice(2);
 const { positional, flags } = parseFlags(rest);
 
 try {
   switch (command) {
+    case 'discover-emails':  if (!positional[0]) usage(); await discoverEmails(positional[0], flags); break;
     case 'sync-apollo':      if (!positional[0]) usage(); await syncApolloContacts(positional[0], flags); break;
     case 'import-csv':       if (positional.length < 2) usage(); await importCsv(positional[0]!, positional[1]!, flags); break;
     case 'import-accounts':  if (positional.length < 2) usage(); await importAccounts(positional[0]!, positional[1]!, flags); break;
@@ -859,6 +968,7 @@ try {
   }
 } catch (err) {
   if (err instanceof ApolloError) console.error(`\n❌ Apollo: ${err.message}\n`);
+  else if (err instanceof HunterError) console.error(`\n❌ Hunter: ${err.message}\n`);
   else console.error(`\n❌ ${err instanceof Error ? err.message : String(err)}\n`);
   process.exitCode = 1;
 } finally {

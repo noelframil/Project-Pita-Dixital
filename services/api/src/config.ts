@@ -45,6 +45,10 @@ const schema = z.object({
   // Canales
   // ── Captación ────────────────────────────────────────────────
   APOLLO_API_KEY: z.string().optional(),
+  HUNTER_API_KEY: z.string().optional(),
+  HUNTER_TIMEOUT_MS: z.coerce.number().int().default(30_000),
+  /** Confianza mínima para aceptar una dirección descubierta. */
+  HUNTER_MIN_CONFIDENCE: z.coerce.number().int().default(80),
   APOLLO_TIMEOUT_MS: z.coerce.number().int().default(30_000),
   /** Freno propio: Apollo permite más, pero un bucle con un fallo cuesta créditos. */
   APOLLO_MAX_ENRICH_PER_RUN: z.coerce.number().int().default(200),
