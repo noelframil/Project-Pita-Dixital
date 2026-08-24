@@ -247,6 +247,36 @@
   gap: 1.5rem;
 }
 
+.card {
+  padding: 2rem;
+  border-radius: var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: cardEntrance 0.6s ease-out backwards;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.1);
+}
+
+@keyframes cardEntrance {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Stagger entrance animations for children */
+.dashboardGrid > *:nth-child(1) { animation-delay: 0.1s; }
+.dashboardGrid > *:nth-child(2) { animation-delay: 0.2s; }
+.dashboardGrid > *:nth-child(3) { animation-delay: 0.3s; }
+
 .projectCard {
   background: var(--surface-dark);
   color: var(--text-on-dark);

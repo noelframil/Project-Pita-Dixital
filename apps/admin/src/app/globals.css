@@ -49,25 +49,66 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* The main glass app container wrapper that goes in layout */
-.app-wrapper {
-  padding: 2rem;
+body {
+  background-color: var(--background);
+  color: var(--foreground);
   min-height: 100vh;
+  overflow: hidden;
+}
+
+.app-wrapper {
+  position: relative;
   display: flex;
-  align-items: center;
   justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 1rem;
+  z-index: 1;
+}
+
+/* Premium Background Orbs */
+.bg-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+  z-index: -1;
+  opacity: 0.6;
+  animation: orbFloat 20s infinite alternate ease-in-out;
+}
+
+.orb-1 {
+  top: -10%;
+  left: -5%;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(255,193,122,0.8) 0%, rgba(242,140,40,0) 70%);
+}
+
+.orb-2 {
+  bottom: -10%;
+  right: -5%;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(200,200,255,0.8) 0%, rgba(100,100,255,0) 70%);
+  animation-delay: -5s;
+}
+
+@keyframes orbFloat {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(5%, 5%) scale(1.1); }
+  100% { transform: translate(-5%, -5%) scale(0.9); }
 }
 
 .glass-container {
   width: 100%;
-  max-width: 1400px;
-  min-height: 90vh;
-  background: var(--glass-bg);
-  backdrop-filter: var(--blur-glass);
-  -webkit-backdrop-filter: var(--blur-glass);
-  border: 1px solid var(--glass-border);
+  max-width: 1600px;
+  height: calc(100vh - 2rem);
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
   border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-glass);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.08), inset 0 0 0 1px rgba(255,255,255,0.5);
   display: flex;
   overflow: hidden;
 }
