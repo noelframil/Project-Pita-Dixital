@@ -1,0 +1,68 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: pita-db-prod
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pita}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-pita}
+    volumes:
+      - pita_pgdata_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pita -d pita"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: pita-redis-prod
+    restart: always
+    command: redis-server --appendonly yes
+    volumes:
+      - pita_redisdata_prod:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+    container_name: pita-api-prod
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-pita}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-pita}
+      - REDIS_URL=redis://redis:6379
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # Añadir el resto de variables críticas aquí
+    ports:
+      - "3001:3001"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  admin:
+    build:
+      context: ./apps/admin
+      dockerfile: Dockerfile
+    container_name: pita-admin-prod
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - API_BASE_URL=http://api:3001
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  pita_pgdata_prod:
+  pita_redisdata_prod:
