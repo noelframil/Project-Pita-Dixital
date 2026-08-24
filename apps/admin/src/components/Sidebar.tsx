@@ -35,6 +35,12 @@ export default function Sidebar() {
               Observabilidad
             </Link>
           </li>
+          <li>
+            <Link href="/integrations" className={styles.navItem}>
+              <span className={styles.iconPlaceholder} style={{ WebkitMaskImage: 'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22currentColor%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M22 12h-4l-3 9L9 3l-3 9H2%22/%3E%3C/svg%3E")' }}></span>
+              Integraciones & Tools
+            </Link>
+          </li>
         </ul>
       </div>
 

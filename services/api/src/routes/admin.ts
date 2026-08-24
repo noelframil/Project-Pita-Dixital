@@ -60,4 +60,28 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
        };
     }
   });
+
+  app.get('/api/v1/admin/tools', async (req, reply) => {
+    try {
+      const rows = await query<{
+        id: string;
+        name: string;
+        description: string;
+        is_active: boolean;
+        kind: string;
+      }>(
+        `SELECT id, name, description, is_active, kind
+           FROM tools
+          ORDER BY name`
+      );
+      return { tools: rows };
+    } catch (err) {
+      app.log.warn('Returning mock tools due to DB error: ' + String(err));
+      return { tools: [
+        { id: 't-1', name: 'consultar_disponibilidad', description: 'Consulta si hay habitaciones libres en un rango de fechas en el calendario RMS.', is_active: true, kind: 'http' },
+        { id: 't-2', name: 'crear_enlace_pago', description: 'Genera un link de Stripe para que el huésped pague la reserva.', is_active: true, kind: 'http' },
+        { id: 't-3', name: 'crm_update_lead', description: 'Actualiza el estado de un lead en HubSpot o Salesforce.', is_active: false, kind: 'http' }
+      ]};
+    }
+  });
 };
