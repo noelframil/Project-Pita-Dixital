@@ -1,0 +1,90 @@
+:root {
+  /* Main UI colors */
+  --background-abstract: radial-gradient(circle at 10% 20%, #dcdcdc 0%, #ffffff 50%, #e6e6e6 100%);
+  --glass-bg: rgba(255, 255, 255, 0.45);
+  --glass-border: rgba(255, 255, 255, 0.6);
+  --foreground: #111111;
+  --text-muted: #666666;
+  
+  /* Cards & Surfaces */
+  --surface-light: #ffffff;
+  --surface-dark: #222222;
+  --text-on-dark: #ffffff;
+  --text-muted-on-dark: #aaaaaa;
+
+  /* Accents */
+  --primary: #000000;
+  --primary-hover: #333333;
+  
+  /* Radii */
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
+  --radius-pill: 9999px;
+  
+  /* Effects */
+  --shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.05);
+  --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.04);
+  --blur-glass: blur(24px);
+  
+  --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html,
+body {
+  max-width: 100vw;
+  min-height: 100vh;
+  overflow-x: hidden;
+  background: var(--background-abstract);
+  color: var(--foreground);
+  font-family: var(--font-inter), sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The main glass app container wrapper that goes in layout */
+.app-wrapper {
+  padding: 2rem;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.glass-container {
+  width: 100%;
+  max-width: 1400px;
+  min-height: 90vh;
+  background: var(--glass-bg);
+  backdrop-filter: var(--blur-glass);
+  -webkit-backdrop-filter: var(--blur-glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-glass);
+  display: flex;
+  overflow: hidden;
+}
+
+/* Common utility classes */
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+ul {
+  list-style: none;
+}
