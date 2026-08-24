@@ -41,8 +41,9 @@ export interface RegisteredTool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  kind: 'http';
-  config: HttpToolConfig;
+  kind: 'http' | 'native';
+  requiresApproval?: boolean;
+  config?: HttpToolConfig;
 }
 
 export interface ToolResult {
@@ -163,7 +164,7 @@ export async function loadTools(clientId: string): Promise<RegisteredTool[]> {
     kind: 'http';
     config: Buffer;
   }>(
-    `SELECT id, name, description, input_schema, kind, config
+    `SELECT id, name, description, input_schema, kind, config, requires_approval
        FROM tools
       WHERE client_id = $1 AND is_active
       ORDER BY name`,
@@ -176,6 +177,7 @@ export async function loadTools(clientId: string): Promise<RegisteredTool[]> {
     description: r.description,
     inputSchema: r.input_schema,
     kind: r.kind,
+    requiresApproval: (r as any).requires_approval,
     config: decryptJson<HttpToolConfig>(r.config),
   }));
 }
@@ -231,13 +233,33 @@ export function buildUrl(template: string, input: Record<string, unknown>): stri
  * dato no está disponible ahora mismo. Reventar el turno entero porque una API
  * de terceros dio un 500 sería peor servicio.
  */
+import { executeNativeTool } from '../tools/index.js';
+
 export async function executeTool(
   tool: RegisteredTool,
   input: Record<string, unknown>,
+  ctx: { clientId: string; runId?: string; sessionId?: string; channel?: string },
 ): Promise<ToolResult> {
   const started = Date.now();
 
+  if (tool.requiresApproval && ctx.runId) {
+    await query(
+      `INSERT INTO pending_actions (client_id, run_id, tool_name, input, status) VALUES ($1, $2, $3, $4, 'pending')`,
+      [ctx.clientId, ctx.runId, tool.name, input]
+    );
+    return {
+      content: 'Acción enviada para aprobación humana. Espera a que el usuario la apruebe para continuar, o avísale que está pendiente en su bandeja.',
+      isError: false,
+      latencyMs: Date.now() - started,
+    };
+  }
+
+  if (tool.kind === 'native') {
+    return executeNativeTool(tool, input, ctx.clientId);
+  }
+
   try {
+    if (!tool.config) throw new Error('Missing HTTP config');
     const url = buildUrl(tool.config.url, input);
     await assertPublicTarget(new URL(url).hostname);
 

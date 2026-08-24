@@ -18,6 +18,12 @@ export default function Sidebar() {
             </Link>
           </li>
           <li>
+            <Link href="/pending" className={`${styles.navItem} ${pathname === '/pending' ? styles.active : ''}`}>
+              <span className={styles.iconPlaceholder} style={{ WebkitMaskImage: 'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22currentColor%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9%22/%3E%3Cpath d=%22M13.73 21a2 2 0 0 1-3.46 0%22/%3E%3C/svg%3E")' }}></span>
+              Aprobaciones
+            </Link>
+          </li>
+          <li>
             <Link href="/clients" className={`${styles.navItem} ${pathname === '/clients' ? styles.active : ''}`}>
               <span className={styles.iconPlaceholder} style={{ WebkitMaskImage: 'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22currentColor%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z%22/%3E%3C/svg%3E")' }}></span>
               Agentes & Autoconfig

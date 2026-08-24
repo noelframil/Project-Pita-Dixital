@@ -77,6 +77,7 @@ async function loadEmailAccount(clientId?: string): Promise<ChannelAccount | nul
 
   if (rows.length === 0) return null;
   const r = rows[0];
+  if (!r) return null;
 
   return {
     id: r.id,

@@ -208,3 +208,24 @@ export async function cancelAllFollowUps(conversationId: string) {
   }
 }
 
+/**
+ * Programa un seguimiento dinámico con una instrucción libre.
+ * Útil para cuando el bot decide proactivamente que debe hacer un seguimiento en X horas.
+ */
+export async function scheduleDynamicFollowUp(
+  clientId: string, 
+  sessionId: string, 
+  channel: string, 
+  hours: number, 
+  contextPrompt: string
+) {
+  await scheduleProactiveMessage({
+    clientId,
+    sessionId,
+    channel,
+    contextPrompt,
+    sendAt: new Date(Date.now() + hours * 3600 * 1000),
+    dedupeKey: `dynamic-${sessionId}-${Date.now()}`
+  });
+}
+

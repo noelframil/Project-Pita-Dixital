@@ -32,18 +32,38 @@ export default function IntegrationsPage() {
   return (
     <div className={styles.container}>
       <header className={styles.header}>
-        <div>
-          <Link href="/"
-            style={{
-              color: 'var(--text-muted)',
-              marginBottom: '0.5rem',
-              display: 'inline-block',
-              fontSize: '0.9rem',
-              textDecoration: 'none'
-            }}>
-            &larr; Volver al Dashboard
-          </Link>
-          <h1 className={styles.title}>Integraciones & Tools</h1>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <Link href="/"
+              style={{
+                color: 'var(--text-muted)',
+                marginBottom: '0.5rem',
+                display: 'inline-block',
+                fontSize: '0.9rem',
+                textDecoration: 'none'
+              }}>
+              &larr; Volver al Dashboard
+            </Link>
+            <h1 className={styles.title}>Integraciones y Herramientas (Tools)</h1>
+            <p style={{ color: 'var(--text-muted)' }}>Herramientas activadas para este cliente. El agente decide cuándo y cómo utilizarlas en tiempo real.</p>
+          </div>
+          <a 
+            href="http://localhost:3000/api/v1/oauth/google" 
+            style={{ 
+              background: '#4285F4', 
+              color: '#fff', 
+              padding: '0.6rem 1.2rem', 
+              borderRadius: 'var(--radius-sm)', 
+              textDecoration: 'none', 
+              fontWeight: 500, 
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem'
+            }}
+          >
+            <span>🗓️</span>
+            Conectar Google Workspace
+          </a>
         </div>
         <button className={styles.createBtn} style={{ padding: '0.8rem 1.5rem', background: 'var(--foreground)', color: 'var(--background)', borderRadius: 'var(--radius-lg)', fontWeight: 600, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <span style={{ fontSize: '1.2rem' }}>+</span> Añadir Webhook

@@ -44,7 +44,7 @@ export const whatsappAdapter: ChannelAdapter = {
     if (!signature) return false;
 
     const expected = 'sha256=' + crypto
-      .createHmac('sha256', account.credentials.appSecret)
+      .createHmac('sha256', account.credentials.appSecret || '')
       .update(rawBody)
       .digest('hex');
 

@@ -296,14 +296,16 @@ export async function think(req: ThinkRequest): Promise<ThinkResult> {
     provider: cfg.provider,
     model: cfg.model,
     system: systemPrompt,
+    conversationId: conversation.id,
+    clientId: req.clientId,
+    sessionId: req.threadRef,
+    channel: req.channel,
     messages: kept,
     temperature: cfg.temperature,
     maxTokens: cfg.max_tokens,
     maxIterations: cfg.max_tool_iterations,
     tools,
     builtins,
-    conversationId: conversation.id,
-    runId,
     agentRole: 'orchestrator',
     ...(cfg.reflection_enabled && {
       reflection: {
@@ -449,6 +451,7 @@ function buildBuiltins(params: {
           task: String(input.task_description ?? ''),
           allTools: tools,
           conversationId: ctx.conversationId,
+          clientId: ctx.clientId,
           parentRunId: params.parentRunId,
           fallbackProvider: cfg.provider,
           fallbackModel: cfg.model,
@@ -491,6 +494,7 @@ async function runSpecialist(params: {
   task: string;
   allTools: Awaited<ReturnType<typeof loadTools>>;
   conversationId: string;
+  clientId: string;
   parentRunId: string;
   fallbackProvider: string;
   fallbackModel: string;
@@ -516,6 +520,7 @@ async function runSpecialist(params: {
     // Ni delegación ni handoff: un solo nivel.
     builtins: [],
     conversationId: params.conversationId,
+    clientId: params.clientId,
     agentRole: 'specialist',
     agentName: agent.name,
     parentRunId: params.parentRunId,

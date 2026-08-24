@@ -1,9 +1,50 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { pool, query } from '../db.js';
+import { query, queryOne } from '../db.js';
 import { AutoconfigError, generateBotBlueprint } from '../core/autoconfig.js';
 import { encryptJson } from '../lib/crypto.js';
 
 export const adminRoutes: FastifyPluginAsync = async (app) => {
+  app.get('/pending-actions', async (req) => {
+    // MOCK CLIENT ID for now, like others
+    const clientId = 'mock-client-id';
+    const rows = await query(
+      `SELECT id, run_id, tool_name, input, status, created_at 
+       FROM pending_actions 
+       WHERE client_id = $1 AND status = 'pending'
+       ORDER BY created_at ASC`,
+      [clientId]
+    );
+    return rows;
+  });
+
+  app.post('/pending-actions/:id/approve', async (req, reply) => {
+    const clientId = 'mock-client-id';
+    const params = req.params as { id: string };
+
+    const rows = await query<any>(
+      `UPDATE pending_actions SET status = 'approved' WHERE id = $1 AND client_id = $2 RETURNING *`,
+      [params.id, clientId]
+    );
+    if (rows.length === 0) return reply.status(404).send({ error: 'Action not found' });
+
+    const action = rows[0];
+    // In a real scenario, this would resume the agent or execute the tool now.
+    // Since the original runId was paused, we could execute the tool natively here and notify the user.
+    // For this prototype, we'll execute it natively and mark it as done.
+    const toolRow = await queryOne<any>(
+      `SELECT * FROM tools WHERE client_id = $1 AND name = $2`,
+      [clientId, action?.tool_name]
+    );
+
+    if (toolRow && toolRow.kind === 'native') {
+      const { executeNativeTool } = await import('../tools/index.js');
+      const result = await executeNativeTool(toolRow as any, action?.input, clientId);
+      return { message: 'Aprobado y ejecutado', result };
+    }
+
+    return { message: 'Aprobado (simulado)' };
+  });
+
   app.get('/api/v1/admin/clients', async (req, reply) => {
     try {
       const rows = await query<{
