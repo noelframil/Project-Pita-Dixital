@@ -14,13 +14,19 @@ export default function Sidebar() {
           <li>
             <Link href="/" className={`${styles.navItem} ${styles.active}`}>
               <span className={styles.iconPlaceholder} style={{ WebkitMaskImage: 'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22currentColor%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Crect x=%223%22 y=%223%22 width=%227%22 height=%227%22/%3E%3Crect x=%2214%22 y=%223%22 width=%227%22 height=%227%22/%3E%3Crect x=%2214%22 y=%2214%22 width=%227%22 height=%227%22/%3E%3Crect x=%223%22 y=%2214%22 width=%227%22 height=%227%22/%3E%3C/svg%3E")' }}></span>
-              Dashboard Principal
+              Command Center
             </Link>
           </li>
           <li>
             <Link href="/clients" className={styles.navItem}>
               <span className={styles.iconPlaceholder} style={{ WebkitMaskImage: 'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22currentColor%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z%22/%3E%3C/svg%3E")' }}></span>
-              Agentes & Clients
+              Agentes & Autoconfig
+            </Link>
+          </li>
+          <li>
+            <Link href="/subagents" className={styles.navItem}>
+              <span className={styles.iconPlaceholder} style={{ WebkitMaskImage: 'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22currentColor%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpolygon points=%2212 2 2 7 12 12 22 7 12 2%22/%3E%3Cpolyline points=%222 17 12 22 22 17%22/%3E%3Cpolyline points=%222 12 12 17 22 12%22/%3E%3C/svg%3E")' }}></span>
+              Subagentes Expertos
             </Link>
           </li>
           <li>

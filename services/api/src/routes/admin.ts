@@ -152,5 +152,32 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       };
     }
   });
+
+  app.get('/api/v1/admin/subagents', async (req, reply) => {
+    try {
+      const rows = await query<{
+        id: string;
+        name: string;
+        description: string;
+        system_prompt: string;
+        model: string;
+        temperature: number;
+        is_active: boolean;
+      }>(
+        `SELECT id, name, description, system_prompt, model, temperature, is_active
+           FROM subagents
+          ORDER BY name`
+      );
+      return { subagents: rows };
+    } catch (err) {
+      app.log.warn('Returning mock subagents due to DB error: ' + String(err));
+      return { subagents: [
+        { id: 'sa-1', name: 'experto_reservas', description: 'Especialista en motor de reservas y cancelaciones.', model: 'gpt-4o', temperature: 0.2, is_active: true },
+        { id: 'sa-2', name: 'facturacion_contable', description: 'Gestión de facturas y cobros Stripe.', model: 'claude-3-5-sonnet', temperature: 0.1, is_active: true },
+        { id: 'sa-3', name: 'soporte_it', description: 'Problemas técnicos con wifi o TV de las habitaciones.', model: 'qwen2.5:32b', temperature: 0.4, is_active: false }
+      ]};
+    }
+  });
 };
+
 

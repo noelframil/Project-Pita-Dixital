@@ -4,72 +4,108 @@ import styles from "./page.module.css";
 export default function Home() {
   return (
     <div className={styles.dashboardGrid}>
-      {/* Agentes & Autoconfig (Main Card) */}
-      <Link href="/clients" className={`${styles.card} ${styles.cardDark}`} style={{ gridColumn: 'span 6', textDecoration: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}>
-        <h2 className={styles.cardTitle} style={{ marginBottom: '1rem', fontSize: '1.4rem' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>🤖 Agentes & Autoconfig</span>
-          <span>→</span>
+      {/* Header / Intro */}
+      <div style={{ gridColumn: 'span 12', marginBottom: '1rem' }}>
+        <h2 style={{ fontSize: '2rem', fontWeight: 600, margin: 0, display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+          <span style={{ fontSize: '2.5rem' }}>🌐</span>
+          Command Center
         </h2>
-        <p style={{ color: 'var(--text-muted-on-dark)', lineHeight: 1.6, flex: 1 }}>
-          Configura el motor ReAct, gestiona prompts y ajusta los parámetros del LLM en tiempo real.
+        <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem', marginTop: '0.5rem' }}>
+          Centro de control del orquestador ReAct y arquitectura Multi-Agente.
         </p>
-        <div style={{ marginTop: '2rem', display: 'flex', gap: '1rem' }}>
-          <div className={styles.miniCard} style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-on-dark)', border: '1px solid rgba(255,255,255,0.1)' }}>
-            <h4 style={{ fontSize: '1.2rem' }}>Activos</h4>
-            <p style={{ color: 'var(--text-muted-on-dark)' }}>2</p>
+      </div>
+
+      {/* Top row: Key Metrics */}
+      <div className={`${styles.card} ${styles.cardDark}`} style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '2rem', background: 'linear-gradient(135deg, var(--surface-dark), #0f1115)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ fontSize: '1rem', color: 'var(--text-muted-on-dark)', textTransform: 'uppercase' }}>Estado Global</h3>
+          <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'var(--success)', boxShadow: '0 0 10px var(--success)' }}></span>
+        </div>
+        <div style={{ margin: '2rem 0' }}>
+          <span style={{ fontSize: '3.5rem', fontWeight: 600, color: 'var(--text-on-dark)' }}>En Línea</span>
+        </div>
+        <div style={{ display: 'flex', gap: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted-on-dark)' }}>Latencia Media</div>
+            <div style={{ fontSize: '1.2rem', fontWeight: 500, color: 'var(--text-on-dark)' }}>1.25s</div>
           </div>
-          <div className={styles.miniCard} style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-on-dark)', border: '1px solid rgba(255,255,255,0.1)' }}>
-            <h4 style={{ fontSize: '1.2rem' }}>Tokens/M</h4>
-            <p style={{ color: 'var(--text-muted-on-dark)' }}>12.4k</p>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted-on-dark)' }}>Tokens / H</div>
+            <div style={{ fontSize: '1.2rem', fontWeight: 500, color: 'var(--text-on-dark)' }}>45.2K</div>
           </div>
+        </div>
+      </div>
+
+      <Link href="/subagents" className={`${styles.card} ${styles.cardLight}`} style={{ gridColumn: 'span 4', textDecoration: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: '-20%', right: '-10%', width: '150px', height: '150px', background: 'radial-gradient(circle, rgba(168,85,247,0.15) 0%, transparent 70%)', borderRadius: '50%' }}></div>
+        <h3 style={{ fontSize: '1.2rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+          🧠 Subagentes Expertos
+        </h3>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: 1.5, flex: 1 }}>
+          Arquitectura multi-agente activa. El orquestador está delegando tareas a los especialistas.
+        </p>
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: '1rem' }}>
+          <span style={{ fontSize: '3rem', fontWeight: 600, lineHeight: 1 }}>3</span>
+          <span style={{ color: 'var(--primary)', fontWeight: 500, fontSize: '0.9rem' }}>Gestionar &rarr;</span>
         </div>
       </Link>
 
-      {/* Memoria Semántica */}
-      <div className={`${styles.card} ${styles.cardLight}`} style={{ gridColumn: 'span 6', display: 'flex', flexDirection: 'column' }}>
-        <h2 className={styles.cardTitle} style={{ marginBottom: '1rem', fontSize: '1.4rem' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>🧠 Memoria Semántica</span>
-          <span className={styles.taskIconBtn} style={{ background: 'transparent', color: 'var(--foreground)' }}>⋮</span>
-        </h2>
-        <p style={{ color: 'var(--text-muted)', lineHeight: 1.6, flex: 1 }}>
-          Explora los hechos extraídos de las conversaciones y el historial de interacciones a largo plazo.
+      <Link href="/integrations" className={`${styles.card} ${styles.cardLight}`} style={{ gridColumn: 'span 4', textDecoration: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: '-20%', right: '-10%', width: '150px', height: '150px', background: 'radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 70%)', borderRadius: '50%' }}></div>
+        <h3 style={{ fontSize: '1.2rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+          🔌 Integraciones
+        </h3>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: 1.5, flex: 1 }}>
+          Webhooks y Function Calling conectados. El bot puede ejecutar acciones en el mundo real.
         </p>
-        <div style={{ marginTop: '2rem', padding: '1rem', borderRadius: 'var(--radius-md)', background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.05)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Hechos Recientes</span>
-            <span style={{ fontSize: '0.8rem', color: 'var(--primary)' }}>Ver todo</span>
-          </div>
-          <ul style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-            <li>• El cliente prefiere contacto por WhatsApp.</li>
-            <li>• Buscando información sobre rediseño UI.</li>
-          </ul>
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: '1rem' }}>
+          <span style={{ fontSize: '3rem', fontWeight: 600, lineHeight: 1 }}>4</span>
+          <span style={{ color: 'var(--primary)', fontWeight: 500, fontSize: '0.9rem' }}>Configurar &rarr;</span>
         </div>
-      </div>
+      </Link>
 
-      {/* Observabilidad (LLMOps) */}
-      <div className={`${styles.card} ${styles.cardLight}`} style={{ gridColumn: 'span 12', marginTop: '1rem' }}>
-        <h2 className={styles.cardTitle} style={{ marginBottom: '1rem', fontSize: '1.4rem' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>📊 Observabilidad (LLMOps)</span>
-          <span className={styles.taskIconBtn} style={{ background: 'transparent', color: 'var(--foreground)' }}>📈</span>
-        </h2>
-        <p style={{ color: 'var(--text-muted)', lineHeight: 1.6, maxWidth: '600px' }}>
-          Monitoriza los costes, latencias, y visualiza el razonamiento (trazas) de los agentes ReAct en tiempo real.
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.5rem', marginTop: '2rem' }}>
-          <div style={{ padding: '1.5rem', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Latencia Media</span>
-            <span style={{ fontSize: '2rem', fontWeight: 600 }}>1.2s</span>
+      {/* Bottom row: Memory and LLMOps */}
+      <Link href="/memory" className={`${styles.card} ${styles.cardLight}`} style={{ gridColumn: 'span 6', textDecoration: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              📚 Memoria Semántica (RAG)
+            </h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.5rem' }}>
+              Base de conocimiento indexada (PGVector + FTS).
+            </p>
           </div>
-          <div style={{ padding: '1.5rem', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Tasa de Éxito Tools</span>
-            <span style={{ fontSize: '2rem', fontWeight: 600, color: 'var(--success)' }}>98.5%</span>
-          </div>
-          <div style={{ padding: '1.5rem', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Coste Estimado / Mes</span>
-            <span style={{ fontSize: '2rem', fontWeight: 600 }}>$14.20</span>
-          </div>
+          <span style={{ fontSize: '2.5rem' }}>📄</span>
         </div>
-      </div>
+        <div style={{ background: 'rgba(0,0,0,0.03)', borderRadius: 'var(--radius-md)', padding: '1.5rem', marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Chunks Vectorizados</div>
+            <div style={{ fontSize: '1.8rem', fontWeight: 600, color: 'var(--foreground)' }}>1,402</div>
+          </div>
+          <span style={{ color: 'var(--primary)', fontWeight: 500, fontSize: '0.9rem' }}>Actualizar &rarr;</span>
+        </div>
+      </Link>
+
+      <Link href="/llmops" className={`${styles.card} ${styles.cardLight}`} style={{ gridColumn: 'span 6', textDecoration: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              📊 Observabilidad (LLMOps)
+            </h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.5rem' }}>
+              Gasto acumulado y trazas del modelo en tiempo real.
+            </p>
+          </div>
+          <span style={{ fontSize: '2.5rem' }}>📈</span>
+        </div>
+        <div style={{ background: 'rgba(0,0,0,0.03)', borderRadius: 'var(--radius-md)', padding: '1.5rem', marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Gasto Mensual</div>
+            <div style={{ fontSize: '1.8rem', fontWeight: 600, color: 'var(--foreground)' }}>$14.20</div>
+          </div>
+          <span style={{ color: 'var(--primary)', fontWeight: 500, fontSize: '0.9rem' }}>Ver Trazas &rarr;</span>
+        </div>
+      </Link>
     </div>
   );
 }
