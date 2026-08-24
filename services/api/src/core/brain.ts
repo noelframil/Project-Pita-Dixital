@@ -28,6 +28,7 @@ import { buildContextBlock, compileTemplate, mergeVariables } from './prompt.js'
 import { findRelevantKnowledge } from './rag.js';
 import { buildSummaryBlock, summarize, trimToBudget } from './memory.js';
 import { loadTools } from './tools.js';
+import { redactPII } from './dlp.js';
 import { linkRunToMessage } from './telemetry.js';
 import {
   HANDOFF_PROMPT_BLOCK,
@@ -138,6 +139,10 @@ function applyChannelOverrides(cfg: BotConfig, channel: ChannelKind): BotConfig 
  */
 export async function think(req: ThinkRequest): Promise<ThinkResult> {
   const started = Date.now();
+
+  // DLP: Redactar PII antes de procesar el mensaje
+  const safeMessage = redactPII(req.message);
+  req.message = safeMessage;
 
   const baseConfig = await loadBotConfig(req.clientId);
   if (!baseConfig) {

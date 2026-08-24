@@ -1,10 +1,13 @@
 import multipart from '@fastify/multipart';
+import cors from '@fastify/cors';
 import Fastify from 'fastify';
 import { config, isProd } from './config.js';
 import { pool } from './db.js';
 import { chatRoutes } from './routes/chat.js';
 import { outreachRoutes } from './routes/outreach.js';
 import { handoffRoutes } from './routes/handoff.js';
+import { adminRoutes } from './routes/admin.js';
+import { webhookRoutes } from './routes/webhooks.js';
 import { startTelegramPolling } from './channels/telegram.js';
 import { startHandoffWorker } from './core/handoff.js';
 import { flushTraces } from './core/telemetry.js';
@@ -22,6 +25,10 @@ const app = Fastify({
   // El cuerpo crudo hace falta para verificar firmas HMAC de los webhooks.
   // Solo afecta a cuerpos JSON: lo multipart lo acota el plugin de abajo.
   bodyLimit: 2 * 1024 * 1024,
+});
+
+await app.register(cors, {
+  origin: true,
 });
 
 /**
@@ -63,6 +70,8 @@ app.get('/health', async () => {
 await app.register(chatRoutes);
 await app.register(outreachRoutes);
 await app.register(handoffRoutes);
+await app.register(adminRoutes);
+await app.register(webhookRoutes);
 
 const stopTelegram = await startTelegramPolling(app.log);
 // Los avisos de handoff no se mandan dentro de la petición del usuario: si el
