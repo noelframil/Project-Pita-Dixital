@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { pool, query } from '../db.js';
 import { AutoconfigError, generateBotBlueprint } from '../core/autoconfig.js';
+import { encryptJson } from '../lib/crypto.js';
 
 export const adminRoutes: FastifyPluginAsync = async (app) => {
   app.get('/api/v1/admin/clients', async (req, reply) => {
@@ -151,6 +152,43 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         ]
       };
     }
+  });
+
+  app.get('/api/v1/admin/channels', async (req, reply) => {
+    try {
+      const rows = await query<{
+        id: string;
+        client_id: string;
+        channel: string;
+        external_id: string;
+        is_active: boolean;
+        created_at: string;
+      }>(`
+        SELECT id, client_id, channel, external_id, is_active, created_at 
+        FROM channel_accounts 
+        ORDER BY created_at DESC
+      `);
+      return { channels: rows };
+    } catch (err) {
+      app.log.warn('Returning mock channels due to DB error: ' + String(err));
+      return { channels: [
+        { id: 'ch-1', channel: 'telegram', external_id: 'bot_mock', is_active: true, created_at: new Date().toISOString() }
+      ] };
+    }
+  });
+
+  app.post<{ Body: { clientId: string, channel: string, externalId: string, credentials: Record<string, string> } }>('/api/v1/admin/channels', async (req, reply) => {
+    const { clientId, channel, externalId, credentials } = req.body;
+    const encrypted = encryptJson(credentials);
+    
+    await query(
+      `INSERT INTO channel_accounts (client_id, channel, external_id, credentials, is_active)
+       VALUES ($1, $2, $3, $4, TRUE)
+       ON CONFLICT (client_id, channel, external_id) 
+       DO UPDATE SET credentials = EXCLUDED.credentials, is_active = TRUE`,
+      [clientId, channel, externalId, encrypted]
+    );
+    return { success: true };
   });
 
   app.get('/api/v1/admin/subagents', async (req, reply) => {
