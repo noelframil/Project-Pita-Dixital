@@ -71,7 +71,14 @@ export async function resolveConversation(params: {
       ],
     );
 
-    return convo.rows[0]!;
+    const conversation = convo.rows[0]!;
+    
+    // El usuario ha escrito. Cancelamos los seguimientos automáticos pendientes.
+    // Importamos dinámicamente para evitar ciclos
+    const { cancelAllFollowUps } = await import('../queue/proactive.js');
+    await cancelAllFollowUps(conversation.id);
+
+    return conversation;
   });
 }
 

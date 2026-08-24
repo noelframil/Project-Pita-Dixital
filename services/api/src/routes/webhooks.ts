@@ -61,7 +61,70 @@ async function handleEvent(event: InboundEvent, account: ChannelAccount, app: an
   );
 }
 
+import { emailAdapter } from '../channels/email.js';
+
+async function loadEmailAccount(clientId?: string): Promise<ChannelAccount | null> {
+  // In a multi-tenant setup, we'd lookup by email or client. For MVP, we load the active email account.
+  let q = `SELECT id, client_id, external_id, credentials
+           FROM channel_accounts
+          WHERE channel = 'email' AND is_active = TRUE LIMIT 1`;
+  const rows = await query<{
+    id: string;
+    client_id: string;
+    external_id: string;
+    credentials: Buffer;
+  }>(q);
+
+  if (rows.length === 0) return null;
+  const r = rows[0];
+
+  return {
+    id: r.id,
+    clientId: r.client_id,
+    channel: 'email',
+    externalId: r.external_id,
+    credentials: decryptJson<Record<string, string>>(r.credentials),
+  };
+}
+
 export const webhookRoutes: FastifyPluginAsync = async (app) => {
+  app.post('/api/v1/webhooks/resend', async (req, reply) => {
+    const payload = req.body as any;
+    
+    // Verify signature (optional for now, but recommended in production via Svix)
+    const type = payload.type;
+
+    if (type === 'email.bounced' || type === 'email.complained') {
+      const email = payload.data?.to?.[0];
+      if (email) {
+        // Suppress email
+        app.log.warn({ email, type }, 'Email rebotado o queja. Añadiendo a lista de supresión.');
+        // Asumimos que el email está en un contact_identities
+        await query(
+          `UPDATE contact_identities 
+              SET is_active = FALSE 
+            WHERE channel = 'email' AND channel_user_id = $1`,
+          [email]
+        );
+      }
+      return reply.code(200).send('OK');
+    }
+
+    // Incoming email (email.received doesn't officially exist as such in standard Resend yet, 
+    // but we simulate inbound webhook parsing)
+    const account = await loadEmailAccount();
+    if (!account) return reply.code(200).send('No active email account');
+
+    const events = emailAdapter.parse(payload, account);
+    reply.code(200).send('OK');
+
+    for (const event of events) {
+      handleEvent(event, account, app).catch(err => {
+        app.log.error({ err, eventId: event.eventId }, 'fallo procesando evento de email');
+      });
+    }
+  });
+
   // Verificación del Webhook (hub.challenge)
   app.get<{ Querystring: { 'hub.mode': string; 'hub.challenge': string; 'hub.verify_token': string } }>('/api/v1/webhooks/whatsapp', async (req, reply) => {
     const mode = req.query['hub.mode'];
