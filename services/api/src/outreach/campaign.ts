@@ -127,9 +127,23 @@ export async function runCampaign(
               SELECT 1 FROM campaign_sends cs
                WHERE cs.campaign_id = $3 AND cs.prospect_id = p.id
                  AND cs.status IN ('sent','pending'))
+        -- Periodo de descanso por PERSONA, no por campaña.
+        --
+        -- Las campañas son por operación y los prospectos por vertical, así que
+        -- alguien de agroindustria encaja a la vez con el olivar, los
+        -- invernaderos y la infraestructura hídrica. Sin esto recibiría las tres
+        -- el mismo día, que es exactamente la forma de un envío masivo y anula
+        -- la razón de haber separado una operación por correo.
+        AND NOT EXISTS (
+              SELECT 1 FROM campaign_sends cs2
+                JOIN campaigns c2 ON c2.id = cs2.campaign_id
+               WHERE cs2.prospect_id = p.id
+                 AND c2.client_id = p.client_id
+                 AND cs2.status = 'sent'
+                 AND cs2.sent_at > NOW() - ($5 || ' days')::interval)
       ORDER BY p.created_at
       LIMIT $4`,
-    [campaign.client_id, campaign.segment, campaign.id, opts.limit ?? 1000],
+    [campaign.client_id, campaign.segment, campaign.id, opts.limit ?? 1000, String(config.OUTREACH_COOLDOWN_DAYS)],
   );
 
   const summary: RunSummary = {
@@ -182,11 +196,17 @@ export async function runCampaign(
         unsubscribeUrl,
       });
 
+      // Un ensayo se registra como 'simulated', no como 'sent'.
+      //
+      // Marcarlo como enviado hacía que el propio ensayo consumiera el periodo
+      // de descanso y bloqueara el envío real posterior: se probaba la campaña
+      // y luego, al lanzarla de verdad, salían cero candidatos sin motivo
+      // aparente.
       await query(
         `UPDATE campaign_sends
-            SET status='sent', provider_msg_id=$2, sent_at=NOW()
+            SET status=$3, provider_msg_id=$2, sent_at=NOW()
           WHERE id=$1`,
-        [send.id, outcome.providerMsgId],
+        [send.id, outcome.providerMsgId, outcome.live ? 'sent' : 'simulated'],
       );
       summary.sent++;
     } catch (err) {

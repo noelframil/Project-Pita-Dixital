@@ -63,6 +63,8 @@ const schema = z.object({
   OUTREACH_REPLY_TO: z.string().optional(),
   /** Envíos por minuto. Salir despacio protege la reputación del dominio. */
   OUTREACH_SEND_PER_MINUTE: z.coerce.number().int().default(20),
+  /** Días que una persona descansa entre correos, sea cual sea la campaña. */
+  OUTREACH_COOLDOWN_DAYS: z.coerce.number().int().default(14),
   /** Si es false, nada sale a internet: se registra el envío y ya. */
   OUTREACH_LIVE: envBool(false),
 
