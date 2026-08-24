@@ -55,6 +55,9 @@ const schema = z.object({
 
   OUTREACH_PROVIDER: z.enum(['resend', 'mailersend']).default('mailersend'),
   RESEND_API_KEY: z.string().optional(),
+  RESEND_WEBHOOK_SECRET: z.string().optional(),
+  /** Dominio de recepción de Resend, p. ej. erkuede.resend.app */
+  INBOUND_DOMAIN: z.string().optional(),
   MAILERSEND_API_KEY: z.string().optional(),
   /** Cabeceras personalizadas: Professional en adelante. */
   MAILERSEND_CUSTOM_HEADERS: envBool(false),

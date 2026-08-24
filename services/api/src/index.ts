@@ -5,6 +5,7 @@ import { config, isProd } from './config.js';
 import { pool } from './db.js';
 import { chatRoutes } from './routes/chat.js';
 import { outreachRoutes } from './routes/outreach.js';
+import { inboundRoutes } from './routes/inbound.js';
 import { handoffRoutes } from './routes/handoff.js';
 import { adminRoutes } from './routes/admin.js';
 import { webhookRoutes } from './routes/webhooks.js';
@@ -90,6 +91,7 @@ app.get('/health', async () => {
 
 await app.register(chatRoutes);
 await app.register(outreachRoutes);
+await app.register(inboundRoutes);
 await app.register(handoffRoutes);
 await app.register(adminRoutes);
 await app.register(webhookRoutes);
