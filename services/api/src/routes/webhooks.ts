@@ -77,23 +77,35 @@ export const webhookRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post('/api/v1/webhooks/whatsapp', async (req, reply) => {
-    const rawBody = (req.body as any) || {}; // We need the raw string to verify signature properly. Fastify can provide it with raw-body or we parse payload directly.
-    // En Fastify, si req.body ya es un objeto, la validación HMAC es delicada si no guardamos el raw_body.
-    // Asumiremos que el middleware anterior lo procesó, o que usamos raw-body.
-    // Por ahora para avanzar, solo parseamos:
-    
+    // El cuerpo crudo lo conserva el parser registrado en index.ts. Sin él no
+    // hay firma que validar: reserializar el objeto ya parseado cambia
+    // espacios y orden de claves, y el HMAC nunca cuadraría.
+    const rawBody = (req as unknown as { rawBody?: string }).rawBody;
+
     const accounts = await loadWhatsAppAccounts();
-    
+
     // Encontramos la cuenta correspondiente mirando el payload
     const payload = req.body as any;
     const phoneNumberId = payload.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id;
-    
+
     if (!phoneNumberId) return reply.code(200).send('OK');
-    
+
     const account = accounts.find(a => a.externalId === phoneNumberId);
     if (!account) {
       app.log.warn({ phoneNumberId }, 'Cuenta de WhatsApp desconocida');
       return reply.code(200).send('OK');
+    }
+
+    // Verificación de firma. Va aquí y no antes porque el secreto es por
+    // cuenta: hasta saber a qué número va dirigido no hay con qué comparar.
+    //
+    // Un 200 a lo no verificado convertiría esto en un endpoint abierto:
+    // cualquiera que conozca la URL podría inyectar mensajes y hacer responder
+    // al bot, gastando tokens y ensuciando conversaciones reales.
+    const headers = req.headers as Record<string, string>;
+    if (!rawBody || !whatsappAdapter.verify?.(rawBody, headers, account)) {
+      app.log.warn({ phoneNumberId }, 'firma de webhook inválida: descartado');
+      return reply.code(401).send('invalid signature');
     }
 
     // Parseamos los eventos

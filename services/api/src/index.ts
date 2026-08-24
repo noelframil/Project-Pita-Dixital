@@ -62,6 +62,27 @@ await app.register(multipart, {
   },
 });
 
+/**
+ * Conserva el cuerpo crudo además del JSON ya parseado.
+ *
+ * Las firmas HMAC de los webhooks se calculan sobre los bytes exactos que
+ * envió el proveedor. Si solo se guarda el objeto parseado, volver a
+ * serializarlo cambia espacios y orden de claves y la firma nunca cuadra —el
+ * motivo por el que es tan frecuente acabar sin verificar nada.
+ */
+app.addContentTypeParser(
+  'application/json',
+  { parseAs: 'string' },
+  (req, body, done) => {
+    (req as unknown as { rawBody: string }).rawBody = body as string;
+    try {
+      done(null, body === '' ? {} : JSON.parse(body as string));
+    } catch (err) {
+      done(err as Error, undefined);
+    }
+  },
+);
+
 app.get('/health', async () => {
   await pool.query('SELECT 1');
   return { status: 'ok', ts: new Date().toISOString() };

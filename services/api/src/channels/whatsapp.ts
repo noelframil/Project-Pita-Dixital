@@ -43,12 +43,24 @@ export const whatsappAdapter: ChannelAdapter = {
     const signature = headers['x-hub-signature-256'];
     if (!signature) return false;
 
+    // Sin secreto no se puede verificar nada. Falla cerrado: dejarlo pasar
+    // convertiría el webhook en un endpoint abierto para cualquiera que
+    // conozca la URL.
+    const appSecret = account.credentials.appSecret;
+    if (!appSecret) return false;
+
     const expected = 'sha256=' + crypto
-      .createHmac('sha256', account.credentials.appSecret)
-      .update(rawBody)
+      .createHmac('sha256', appSecret)
+      .update(rawBody, 'utf8')
       .digest('hex');
 
-    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+    // timingSafeEqual lanza RangeError si los buffers miden distinto, así que
+    // una cabecera recortada tumbaría el manejador en vez de rechazarse. Se
+    // compara la longitud primero —que no es secreta— y solo entonces el
+    // contenido en tiempo constante.
+    const a = Buffer.from(signature);
+    const b = Buffer.from(expected);
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
   },
 
   parse(payload: unknown, account: ChannelAccount): InboundEvent[] {
