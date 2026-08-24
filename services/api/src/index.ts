@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 import { config, isProd } from './config.js';
 import { pool } from './db.js';
 import { chatRoutes } from './routes/chat.js';
+import { outreachRoutes } from './routes/outreach.js';
 import { handoffRoutes } from './routes/handoff.js';
 import { startTelegramPolling } from './channels/telegram.js';
 import { startHandoffWorker } from './core/handoff.js';
@@ -60,6 +61,7 @@ app.get('/health', async () => {
 });
 
 await app.register(chatRoutes);
+await app.register(outreachRoutes);
 await app.register(handoffRoutes);
 
 const stopTelegram = await startTelegramPolling(app.log);
