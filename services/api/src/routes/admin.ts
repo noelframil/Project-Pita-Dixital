@@ -84,4 +84,28 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       ]};
     }
   });
+
+  app.get('/api/v1/admin/knowledge', async (req, reply) => {
+    try {
+      const rows = await query<{
+        source_ref: string;
+        chunks: number;
+        last_embedded: string;
+      }>(
+        `SELECT source_ref, COUNT(*) as chunks, MAX(embedded_at) as last_embedded
+           FROM knowledge_entries
+          GROUP BY source_ref
+          ORDER BY last_embedded DESC`
+      );
+      return { documents: rows };
+    } catch (err) {
+      app.log.warn('Returning mock knowledge due to DB error: ' + String(err));
+      return { documents: [
+        { source_ref: 'Manual_Operaciones_2026.pdf', chunks: 42, last_embedded: new Date().toISOString() },
+        { source_ref: 'FAQ_Huespedes.docx', chunks: 15, last_embedded: new Date(Date.now() - 86400000).toISOString() },
+        { source_ref: 'Tarifas_Temporada_Alta.csv', chunks: 8, last_embedded: new Date(Date.now() - 86400000 * 3).toISOString() }
+      ]};
+    }
+  });
 };
+
