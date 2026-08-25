@@ -119,6 +119,7 @@ export async function chatRoutes(app: FastifyInstance) {
     }
 
     try {
+      const safeSourceKind = ingested.sourceKind === 'document' ? 'text' : ingested.sourceKind;
       const result = await think({
         clientId: client.clientId,
         channel: 'web',
@@ -127,7 +128,7 @@ export async function chatRoutes(app: FastifyInstance) {
         message: ingested.message,
         displayName: parsed.displayName,
         overrideVariables: parsed.overrideVariables,
-        sourceKind: ingested.sourceKind,
+        sourceKind: safeSourceKind,
         mediaCostMicros: ingested.mediaCostMicros,
       });
 

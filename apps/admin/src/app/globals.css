@@ -1,20 +1,26 @@
 :root {
-  /* Main UI colors */
-  --background-abstract: radial-gradient(circle at 10% 20%, #dcdcdc 0%, #ffffff 50%, #e6e6e6 100%);
-  --glass-bg: rgba(255, 255, 255, 0.45);
-  --glass-border: rgba(255, 255, 255, 0.6);
-  --foreground: #111111;
-  --text-muted: #666666;
+  /* Premium Dark Theme */
+  --background: #09090b;
+  --background-abstract: radial-gradient(circle at 15% 50%, rgba(20, 20, 25, 1) 0%, #09090b 100%);
+  --glass-bg: rgba(20, 20, 25, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-highlight: rgba(255, 255, 255, 0.04);
+  --foreground: #fafafa;
+  --text-muted: #a1a1aa;
   
   /* Cards & Surfaces */
-  --surface-light: #ffffff;
-  --surface-dark: #222222;
+  --surface-light: rgba(30, 30, 35, 0.7);
+  --surface-dark: rgba(15, 15, 20, 0.8);
   --text-on-dark: #ffffff;
-  --text-muted-on-dark: #aaaaaa;
+  --text-muted-on-dark: #a1a1aa;
 
-  /* Accents */
-  --primary: #000000;
-  --primary-hover: #333333;
+  /* Accents - Premium Violet/Blue */
+  --primary: #8b5cf6;
+  --primary-hover: #7c3aed;
+  --secondary: #3b82f6;
+  --accent: #f43f5e;
+  --success: #10b981;
+  --warning: #f59e0b;
   
   /* Radii */
   --radius-sm: 8px;
@@ -24,11 +30,20 @@
   --radius-pill: 9999px;
   
   /* Effects */
-  --shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.05);
-  --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.04);
-  --blur-glass: blur(24px);
+  --shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 20px rgba(139, 92, 246, 0.4);
+  --blur-glass: blur(30px);
   
   --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Z-Index */
+  --z-base: 1;
+  --z-elevated: 10;
+  --z-header: 100;
+  --z-modal: 1000;
 }
 
 * {
@@ -70,47 +85,68 @@ body {
 .bg-orb {
   position: absolute;
   border-radius: 50%;
-  filter: blur(100px);
+  filter: blur(120px);
   z-index: -1;
-  opacity: 0.6;
+  opacity: 0.5;
   animation: orbFloat 20s infinite alternate ease-in-out;
 }
 
 .orb-1 {
   top: -10%;
-  left: -5%;
-  width: 500px;
-  height: 500px;
-  background: radial-gradient(circle, rgba(255,193,122,0.8) 0%, rgba(242,140,40,0) 70%);
+  left: -10%;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.6) 0%, rgba(139, 92, 246, 0) 70%); /* Violet */
 }
 
 .orb-2 {
-  bottom: -10%;
-  right: -5%;
-  width: 600px;
-  height: 600px;
-  background: radial-gradient(circle, rgba(200,200,255,0.8) 0%, rgba(100,100,255,0) 70%);
+  bottom: -20%;
+  right: -10%;
+  width: 800px;
+  height: 800px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.5) 0%, rgba(59, 130, 246, 0) 70%); /* Blue */
   animation-delay: -5s;
+}
+
+.orb-3 {
+  top: 40%;
+  right: 20%;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(244, 63, 94, 0.4) 0%, rgba(244, 63, 94, 0) 70%); /* Rose */
+  animation-delay: -10s;
 }
 
 @keyframes orbFloat {
   0% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(5%, 5%) scale(1.1); }
-  100% { transform: translate(-5%, -5%) scale(0.9); }
+  50% { transform: translate(8%, 8%) scale(1.15); }
+  100% { transform: translate(-8%, -8%) scale(0.9); }
 }
 
 .glass-container {
   width: 100%;
   max-width: 1600px;
   height: calc(100vh - 2rem);
-  background: rgba(255, 255, 255, 0.4);
-  backdrop-filter: blur(40px);
-  -webkit-backdrop-filter: blur(40px);
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: var(--glass-bg);
+  backdrop-filter: var(--blur-glass);
+  -webkit-backdrop-filter: var(--blur-glass);
+  border: 1px solid var(--glass-border);
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--radius-xl);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.08), inset 0 0 0 1px rgba(255,255,255,0.5);
+  box-shadow: var(--shadow-glass);
   display: flex;
   overflow: hidden;
+  position: relative;
+}
+
+.glass-container::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  border-radius: var(--radius-xl);
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--glass-highlight);
 }
 
 /* Common utility classes */

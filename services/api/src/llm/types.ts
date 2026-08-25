@@ -1,8 +1,14 @@
 export type ChatRole = 'system' | 'user' | 'assistant' | 'tool';
 
+export interface MessageContentPart {
+  type: 'text' | 'image_url';
+  text?: string;
+  image_url?: { url: string };
+}
+
 export interface ChatMessage {
   role: ChatRole;
-  content: string;
+  content: string | MessageContentPart[];
   /** Herramientas que el modelo pidió en este turno. Solo en `assistant`. */
   toolCalls?: ToolCall[];
   /** A qué llamada responde este resultado. Solo en `tool`. */

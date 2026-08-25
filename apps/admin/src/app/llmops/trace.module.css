@@ -1,0 +1,195 @@
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: rgba(20, 20, 25, 0.95);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: var(--radius-xl);
+  width: 95%;
+  max-width: 800px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.7);
+  animation: popIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: scale(0.98) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.traceId {
+  margin: 0.5rem 0 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-family: monospace;
+}
+
+.closeBtn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 2rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.2s;
+  padding: 0;
+}
+
+.closeBtn:hover {
+  color: var(--foreground);
+}
+
+.content {
+  padding: 2rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.loadingState {
+  text-align: center;
+  padding: 4rem;
+  color: var(--primary);
+  font-weight: 500;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  position: relative;
+}
+
+/* The connecting line */
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 20px;
+  top: 10px;
+  bottom: 30px;
+  width: 2px;
+  background: rgba(255,255,255,0.1);
+  z-index: 0;
+}
+
+.step {
+  display: flex;
+  gap: 1.5rem;
+  position: relative;
+  z-index: 1;
+}
+
+.icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--surface-dark);
+  border: 2px solid rgba(255,255,255,0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.stepContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+}
+
+.stepHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stepLabel {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.duration {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: monospace;
+  background: rgba(0,0,0,0.2);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+
+.bubble {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.05);
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--foreground);
+  white-space: pre-wrap;
+  font-family: monospace;
+}
+
+/* Color specific styles */
+.user .icon { border-color: var(--primary); }
+.user .stepLabel { color: var(--primary); }
+.user .bubble { font-family: inherit; }
+
+.thought .icon { border-color: rgba(255, 255, 255, 0.3); opacity: 0.7; }
+.thought .stepLabel { color: var(--text-muted); }
+.thought .bubble { color: var(--text-muted); font-style: italic; }
+
+.tool_call .icon { border-color: #f59e0b; }
+.tool_call .stepLabel { color: #f59e0b; }
+.tool_call .bubble { border-left: 3px solid #f59e0b; background: rgba(245, 158, 11, 0.05); }
+
+.tool_result .icon { border-color: var(--success); }
+.tool_result .stepLabel { color: var(--success); }
+.tool_result .bubble { border-left: 3px solid var(--success); background: rgba(16, 185, 129, 0.05); }
+
+.assistant .icon { border-color: var(--primary); background: rgba(139, 92, 246, 0.2); }
+.assistant .stepLabel { color: var(--primary); }
+.assistant .bubble { font-family: inherit; font-size: 1.05rem; background: rgba(139, 92, 246, 0.1); border-color: rgba(139, 92, 246, 0.3); }

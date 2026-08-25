@@ -1,5 +1,6 @@
 import multipart from '@fastify/multipart';
 import cors from '@fastify/cors';
+import websocket from '@fastify/websocket';
 import Fastify from 'fastify';
 import { config, isProd } from './config.js';
 import { pool } from './db.js';
@@ -8,12 +9,14 @@ import { handoffRoutes } from './routes/handoff.js';
 import { adminRoutes } from './routes/admin.js';
 import { webhookRoutes } from './routes/webhooks.js';
 import { oauthRoutes } from './routes/oauth.js';
+import { voiceRoutes } from './routes/twilio-voice.js';
 import { startTelegramPolling } from './channels/telegram.js';
 import { startHandoffWorker } from './core/handoff.js';
 import { flushTraces } from './core/telemetry.js';
 import { closeRedis } from './queue/connection.js';
 import { closeProactiveQueue } from './queue/proactive.js';
 import { startProactiveWorker } from './queue/worker.js';
+import { startCronWorker } from './queue/cronWorker.js';
 
 const app = Fastify({
   logger: {
@@ -30,6 +33,8 @@ const app = Fastify({
 await app.register(cors, {
   origin: true,
 });
+
+await app.register(websocket);
 
 /**
  * Multipart acotado por todos los lados.
@@ -68,10 +73,11 @@ app.get('/health', async () => {
 });
 
 await app.register(chatRoutes);
-await app.register(handoffRoutes);
-await app.register(adminRoutes);
-await app.register(webhookRoutes);
-await app.register(oauthRoutes);
+app.register(handoffRoutes);
+app.register(adminRoutes);
+app.register(webhookRoutes);
+app.register(oauthRoutes);
+app.register(voiceRoutes);
 
 const stopTelegram = await startTelegramPolling(app.log);
 // Los avisos de handoff no se mandan dentro de la petición del usuario: si el
@@ -81,11 +87,13 @@ const stopHandoffWorker = startHandoffWorker(app.log);
 // Mensajes proactivos. Devuelve null si no hay REDIS_URL: esa capa es opcional
 // y su ausencia no impide que el resto del servicio funcione.
 const stopProactiveWorker = startProactiveWorker(app.log);
+const stopCronWorker = startCronWorker(app.log);
 
 const shutdown = async (signal: string) => {
   app.log.info(`${signal} recibido, cerrando`);
   stopTelegram();
   stopHandoffWorker();
+  stopCronWorker();
 
   // Se para de aceptar peticiones antes de cerrar nada más: si no, una petición
   // en curso se encontraría el pool de Postgres cerrado a media respuesta.

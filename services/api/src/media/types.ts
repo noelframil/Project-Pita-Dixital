@@ -23,7 +23,7 @@
  * herramienta, no reenviarlo siempre.
  */
 
-export type MediaKind = 'audio' | 'image';
+export type MediaKind = 'audio' | 'image' | 'document';
 
 export interface MediaInput {
   kind: MediaKind;
@@ -38,6 +38,8 @@ export interface MediaInput {
 export interface MediaExtraction {
   /** Lo que se inyecta en el chat como si lo hubiera escrito el usuario. */
   text: string;
+  base64?: string;
+  mime?: string;
   kind: MediaKind;
   model: string;
   costMicros: number;
@@ -130,6 +132,7 @@ const SIGNATURES: Array<{ mime: string; kind: MediaKind; test: (b: Buffer) => bo
     test: (b) => b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3,
   },
   { mime: 'audio/flac', kind: 'audio', test: (b) => b.subarray(0, 4).toString('ascii') === 'fLaC' },
+  { mime: 'application/pdf', kind: 'document', test: (b) => b.subarray(0, 4).toString('ascii') === '%PDF' },
 ];
 
 export interface SniffResult {

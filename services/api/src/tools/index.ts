@@ -1,6 +1,11 @@
 import { googleCalendarCheck, googleCalendarSchedule, googleGmailSend } from './google.js';
 import { webSearch, webFetch } from './web.js';
+import { createStripePaymentLink } from './stripe.js';
 import { scheduleDynamicFollowUp } from '../queue/proactive.js';
+import { runCodeInterpreter } from './interpreter.js';
+import { runBrowserAutomation } from './browser.js';
+import { saveToMemory } from './memory.js';
+import { scheduleCron } from './cron.js';
 import type { RegisteredTool, ToolResult } from '../core/tools.js';
 
 export async function executeNativeTool(
@@ -27,6 +32,16 @@ export async function executeNativeTool(
       }
       await scheduleDynamicFollowUp(ctx.clientId, ctx.sessionId, ctx.channel, input.hours as number, input.prompt as string);
       content = 'Programado correctamente.';
+    } else if (tool.name === 'code_interpreter') {
+      content = await runCodeInterpreter(input);
+    } else if (tool.name === 'browser_agent') {
+      content = await runBrowserAutomation(input);
+    } else if (tool.name === 'save_to_memory') {
+      content = await saveToMemory(ctx.clientId, input);
+    } else if (tool.name === 'schedule_cron') {
+      content = await scheduleCron(ctx.clientId, input);
+    } else if (tool.name === 'stripe_payment_link') {
+      content = await createStripePaymentLink(input);
     } else {
       throw new Error(`Unknown native tool: ${tool.name}`);
     }

@@ -30,10 +30,13 @@ export function toOpenAiMessages(messages: ChatMessage[]): Record<string, unknow
       return { role: 'tool', tool_call_id: msg.toolCallId, content: msg.content };
     }
     if (msg.role === 'assistant' && msg.toolCalls?.length) {
+      let contentStr = '';
+      if (typeof msg.content === 'string') contentStr = msg.content;
+      else if (Array.isArray(msg.content)) contentStr = msg.content.map(c => c.text || '').join('');
       return {
         role: 'assistant',
         // null y no cadena vacía: es lo que la API espera cuando solo hay llamadas.
-        content: msg.content.trim() || null,
+        content: contentStr.trim() || null,
         tool_calls: msg.toolCalls.map((c) => ({
           id: c.id,
           type: 'function',
@@ -41,7 +44,12 @@ export function toOpenAiMessages(messages: ChatMessage[]): Record<string, unknow
         })),
       };
     }
-    return { role: msg.role, content: msg.content };
+    return { 
+      role: msg.role, 
+      content: Array.isArray(msg.content) 
+        ? msg.content.map(p => p.type === 'image_url' ? { type: 'image_url', image_url: { url: p.image_url?.url } } : { type: 'text', text: p.text }) 
+        : msg.content 
+    };
   });
 }
 

@@ -44,41 +44,80 @@ export default function PendingActionsPage() {
     }
   };
 
+  const getIcon = (toolName: string) => {
+    switch (toolName) {
+      case 'google_calendar_schedule': return '🗓️';
+      case 'google_gmail_send': return '📧';
+      case 'browser_agent': return '🌐';
+      case 'code_interpreter': return '💻';
+      case 'save_to_memory': return '🧠';
+      default: return '⚙️';
+    }
+  };
+
   return (
     <div className={styles.container}>
       <header className={styles.header}>
-        <h1 className={styles.title}>Aprobaciones Pendientes</h1>
-        <p style={{ color: 'var(--text-muted)' }}>Revisa y aprueba las acciones críticas que Pita Dixital quiere realizar.</p>
+        <h1 className={styles.title}>
+          <span style={{ fontSize: '3rem' }}>🛡️</span> 
+          Aprobaciones Pendientes
+        </h1>
+        <p className={styles.subtitle}>
+          Revisa y autoriza las acciones críticas que el agente requiere ejecutar. Esta es la barrera de seguridad (Human-in-the-Loop) antes de afectar al mundo real.
+        </p>
       </header>
 
       {loading ? (
-        <p>Cargando acciones...</p>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '4rem' }}>
+          <div className={styles.badge}>Sincronizando con el orquestador...</div>
+        </div>
       ) : actions.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '4rem', background: 'var(--surface)', borderRadius: 'var(--radius-lg)' }}>
-          <span style={{ fontSize: '3rem' }}>🎉</span>
-          <h3 style={{ marginTop: '1rem', color: 'var(--foreground)' }}>No tienes tareas pendientes</h3>
-          <p style={{ color: 'var(--text-muted)' }}>El bot está funcionando en modo autónomo y no requiere tu intervención.</p>
+        <div className={styles.emptyState}>
+          <div className={styles.emptyIcon}>🎉</div>
+          <h3 className={styles.emptyTitle}>Sistemas Despejados</h3>
+          <p className={styles.emptyText}>
+            El agente está operando de forma autónoma. No hay acciones críticas pendientes de revisión manual.
+          </p>
         </div>
       ) : (
         <div className={styles.grid}>
           {actions.map(action => (
             <div key={action.id} className={styles.card}>
               <div className={styles.cardHeader}>
-                <h3 className={styles.cardTitle}>
-                  <span>{action.tool_name === 'google_calendar_schedule' ? '🗓️' : action.tool_name === 'google_gmail_send' ? '📧' : '⚙️'}</span>
-                  Ejecutar: {action.tool_name}
-                </h3>
+                <div className={styles.cardTitle}>
+                  <div className={styles.iconWrapper}>
+                    {getIcon(action.tool_name)}
+                  </div>
+                  {action.tool_name}
+                </div>
                 <span className={styles.badge}>{action.status}</span>
               </div>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                Creado: {new Date(action.created_at).toLocaleString()}
-              </p>
-              <div className={styles.inputData}>
-                {JSON.stringify(action.input, null, 2)}
+              
+              <div className={styles.timestamp}>
+                <span>⏱️</span>
+                {new Date(action.created_at).toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' })}
               </div>
+
+              <div className={styles.inputDataWrapper}>
+                <div className={styles.inputDataHeader}>Parámetros de Entrada (JSON)</div>
+                <div className={styles.inputData}>
+                  {JSON.stringify(action.input, null, 2)}
+                </div>
+              </div>
+
               <div className={styles.actions}>
-                <button className={styles.rejectBtn} onClick={() => setActions(actions.filter(a => a.id !== action.id))}>Rechazar</button>
-                <button className={styles.approveBtn} onClick={() => handleApprove(action.id)}>Aprobar</button>
+                <button 
+                  className={`${styles.btn} ${styles.rejectBtn}`} 
+                  onClick={() => setActions(actions.filter(a => a.id !== action.id))}
+                >
+                  <span>✕</span> Rechazar
+                </button>
+                <button 
+                  className={`${styles.btn} ${styles.approveBtn}`} 
+                  onClick={() => handleApprove(action.id)}
+                >
+                  <span>✓</span> Aprobar Ejecución
+                </button>
               </div>
             </div>
           ))}

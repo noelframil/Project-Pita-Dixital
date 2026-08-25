@@ -38,8 +38,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
     if (toolRow && toolRow.kind === 'native') {
       const { executeNativeTool } = await import('../tools/index.js');
-      const result = await executeNativeTool(toolRow as any, action?.input, clientId);
-      return { message: 'Aprobado y ejecutado', result };
+      const nativeResult = await executeNativeTool(toolRow as any, action?.input, { clientId });
+      return { message: 'Aprobado y ejecutado', result: nativeResult.content };
     }
 
     return { message: 'Aprobado (simulado)' };
@@ -100,6 +100,25 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
            usage: { promptTokens: 100, completionTokens: 50, costMicros: 0 }
          } 
        };
+    }
+  });
+
+  app.post<{ Params: { id: string }, Body: { credentials: Record<string, string> } }>('/api/v1/admin/tools/:id/config', async (req, reply) => {
+    const { id } = req.params;
+    const { credentials } = req.body;
+    const clientId = 'mock-client-id';
+    
+    try {
+      // In a real scenario we encrypt and save to DB.
+      // For this UX demo we'll just simulate a successful update.
+      await query(
+        `UPDATE tools SET is_active = TRUE WHERE id = $1 AND client_id = $2`,
+        [id, clientId]
+      );
+      return { success: true };
+    } catch (err) {
+      app.log.warn('Returning mock success due to DB error: ' + String(err));
+      return { success: true };
     }
   });
 
@@ -180,16 +199,28 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       };
     } catch (err) {
       app.log.warn('Returning mock llmops due to DB error: ' + String(err));
+      const now = Date.now();
+      const timeseries = Array.from({ length: 7 }).map((_, i) => {
+        const date = new Date(now - (6 - i) * 86400000);
+        return {
+          date: date.toISOString().split('T')[0],
+          cost: +(Math.random() * 5 + 1).toFixed(2),
+          tokens: Math.floor(Math.random() * 50000 + 10000),
+          latency: Math.floor(Math.random() * 800 + 800)
+        };
+      });
+
       return { 
         metrics: {
           total_tokens: 1245000,
           total_cost: 14.20,
           avg_latency: 1250
         },
+        timeseries,
         traces: [
           { id: 'msg-1', conversation_id: 'conv-abc', model: 'gpt-4o-mini', latency_ms: 850, cost_micros: 1500, total_tokens: 150, created_at: new Date().toISOString() },
-          { id: 'msg-2', conversation_id: 'conv-xyz', model: 'qwen2.5:32b', latency_ms: 1420, cost_micros: 0, total_tokens: 340, created_at: new Date(Date.now() - 3600000).toISOString() },
-          { id: 'msg-3', conversation_id: 'conv-def', model: 'gpt-4o', latency_ms: 2100, cost_micros: 12000, total_tokens: 890, created_at: new Date(Date.now() - 7200000).toISOString() }
+          { id: 'msg-2', conversation_id: 'conv-xyz', model: 'qwen2.5:32b', latency_ms: 1420, cost_micros: 0, total_tokens: 340, created_at: new Date(now - 3600000).toISOString() },
+          { id: 'msg-3', conversation_id: 'conv-def', model: 'gpt-4o', latency_ms: 2100, cost_micros: 12000, total_tokens: 890, created_at: new Date(now - 7200000).toISOString() }
         ]
       };
     }
@@ -239,24 +270,127 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         name: string;
         description: string;
         system_prompt: string;
+        tool_names: string[];
         model: string;
         temperature: number;
+        max_iterations: number;
         is_active: boolean;
       }>(
-        `SELECT id, name, description, system_prompt, model, temperature, is_active
-           FROM subagents
+        `SELECT id, name, description, system_prompt, tool_names, model, temperature, max_iterations, is_active
+           FROM sub_agents
           ORDER BY name`
       );
       return { subagents: rows };
     } catch (err) {
       app.log.warn('Returning mock subagents due to DB error: ' + String(err));
       return { subagents: [
-        { id: 'sa-1', name: 'experto_reservas', description: 'Especialista en motor de reservas y cancelaciones.', model: 'gpt-4o', temperature: 0.2, is_active: true },
-        { id: 'sa-2', name: 'facturacion_contable', description: 'Gestión de facturas y cobros Stripe.', model: 'claude-3-5-sonnet', temperature: 0.1, is_active: true },
-        { id: 'sa-3', name: 'soporte_it', description: 'Problemas técnicos con wifi o TV de las habitaciones.', model: 'qwen2.5:32b', temperature: 0.4, is_active: false }
+        { id: 'sa-1', name: 'Agente Contable', description: 'Especialista en finanzas.', system_prompt: 'Eres un contable.', tool_names: ['send_email'], model: 'gpt-4o', temperature: 0.2, max_iterations: 3, is_active: true },
+        { id: 'sa-2', name: 'Agente Legal', description: 'Gestión de contratos.', system_prompt: 'Eres un abogado.', tool_names: ['search_web'], model: 'claude-3-5-sonnet', temperature: 0.1, max_iterations: 3, is_active: true }
       ]};
     }
   });
+
+  app.post<{ Body: { clientId: string, name: string, description: string, systemPrompt: string, model: string, toolNames: string[] } }>('/api/v1/admin/subagents', async (req, reply) => {
+    const { clientId, name, description, systemPrompt, model, toolNames } = req.body;
+    
+    try {
+      const result = await query(
+        `INSERT INTO sub_agents (client_id, name, description, system_prompt, tool_names, model, is_active, max_iterations)
+         VALUES ($1, $2, $3, $4, $5, $6, TRUE, 3)
+         RETURNING *`,
+        [clientId, name, description, systemPrompt, toolNames, model]
+      );
+      return { success: true, subagent: result[0] };
+    } catch (err) {
+      app.log.error(err);
+      return reply.status(500).send({ error: 'DB Error' });
+    }
+  });
+
+  app.delete<{ Params: { id: string } }>('/api/v1/admin/subagents/:id', async (req, reply) => {
+    const clientId = 'mock-client-id';
+    try {
+      const result = await query(
+        `DELETE FROM sub_agents WHERE id = $1 AND client_id = $2 RETURNING id`,
+        [req.params.id, clientId]
+      );
+      if (result.length === 0) return reply.status(404).send({ error: 'Not found' });
+      return { success: true };
+    } catch (err) {
+      app.log.error(err);
+      return reply.status(500).send({ error: 'DB Error' });
+    }
+  });
+
+  app.get('/api/v1/admin/handoffs', async (req, reply) => {
+    const clientId = 'mock-client-id';
+    try {
+      const rows = await query(
+        `SELECT c.id, c.channel, c.status, c.channel_user_id, c.summarized_until, MAX(m.created_at) as last_activity
+         FROM conversations c
+         LEFT JOIN messages m ON c.id = m.conversation_id
+         WHERE c.client_id = $1 AND c.status = 'handoff'
+         GROUP BY c.id, c.channel, c.status, c.channel_user_id, c.summarized_until
+         ORDER BY last_activity DESC`,
+        [clientId]
+      );
+      return { handoffs: rows };
+    } catch (err) {
+      app.log.warn('Mocking handoffs due to DB error: ' + String(err));
+      return { handoffs: [
+        { id: 'conv-123', channel: 'whatsapp', status: 'handoff', channel_user_id: '+34600123456', last_activity: new Date().toISOString() }
+      ] };
+    }
+  });
+
+  app.post('/api/v1/admin/knowledge/upload', async (req, reply) => {
+    const data = await req.file();
+    if (!data) return reply.status(400).send({ error: 'No file uploaded' });
+
+    const buffer = await data.toBuffer();
+    const filename = data.filename;
+    const mimetype = data.mimetype;
+    const clientId = 'mock-client-id'; // En producción, se extrae del auth o del FormData
+
+    let text = '';
+
+    try {
+      if (mimetype === 'application/pdf') {
+        const pdfParseModule = await import('pdf-parse');
+        const pdfParse: any = (pdfParseModule as any).default || pdfParseModule;
+        const pdfData = await pdfParse(buffer);
+        text = pdfData.text;
+      } else {
+        text = buffer.toString('utf8');
+      }
+
+      const { chunkText, chunkMarkdown } = await import('../core/chunking.js');
+      const chunks = filename.endsWith('.md') ? chunkMarkdown(text) : chunkText(text);
+
+      if (chunks.length === 0) return { success: true, chunks: 0 };
+
+      const { embedTexts } = await import('../llm/embeddings.js');
+      const { config } = await import('../config.js');
+      const { vectors, model } = await embedTexts(chunks.map(c => c.text));
+
+      const toSave = chunks.map((c, i) => ({
+        title: filename,
+        body: c.text,
+        embedding: vectors[i]!,
+        index: c.index,
+        metadata: { filename, mimetype }
+      }));
+
+      const { replaceKnowledgeChunks } = await import('../core/rag.js');
+      await replaceKnowledgeChunks(clientId, filename, toSave, model);
+
+      return { success: true, chunks: chunks.length, filename };
+    } catch (err: any) {
+      app.log.error(err);
+      return reply.status(500).send({ error: err.message || 'Upload processing failed' });
+    }
+  });
 };
+
 
 

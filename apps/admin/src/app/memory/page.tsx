@@ -1,7 +1,20 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  ArrowLeft, 
+  UploadCloud, 
+  FileText, 
+  FileSpreadsheet,
+  File,
+  Database,
+  CheckCircle,
+  AlertCircle,
+  Loader2
+} from 'lucide-react';
+import { Card } from '../../components/ui/Card';
 import styles from '../clients/page.module.css';
 
 type KnowledgeDocument = {
@@ -13,8 +26,12 @@ type KnowledgeDocument = {
 export default function MemoryPage() {
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  const loadDocuments = () => {
     fetch('/api/v1/admin/knowledge')
       .then(res => res.json())
       .then(data => {
@@ -25,74 +42,245 @@ export default function MemoryPage() {
         console.error(err);
         setLoading(false);
       });
+  };
+
+  useEffect(() => {
+    loadDocuments();
   }, []);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      await uploadFile(e.dataTransfer.files[0]!);
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      await uploadFile(e.target.files[0]!);
+    }
+  };
+
+  const uploadFile = async (file: File) => {
+    if (!file.name.endsWith('.pdf') && !file.name.endsWith('.txt') && !file.name.endsWith('.md')) {
+      alert('Solo se admiten PDF, TXT o MD');
+      return;
+    }
+
+    setUploading(true);
+    setUploadStatus('idle');
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('/api/v1/admin/knowledge/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) throw new Error('Error al subir');
+      
+      setUploadStatus('success');
+      loadDocuments(); // Reload list
+    } catch (err) {
+      console.error(err);
+      setUploadStatus('error');
+    } finally {
+      setUploading(false);
+      setTimeout(() => setUploadStatus('idle'), 3000);
+    }
+  };
 
   return (
     <div className={styles.container}>
-      <header className={styles.header}>
+      <header className={styles.header} style={{ marginBottom: '2rem' }}>
         <div>
           <Link href="/"
             style={{
               color: 'var(--text-muted)',
-              marginBottom: '0.5rem',
-              display: 'inline-block',
+              marginBottom: '1rem',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.5rem',
               fontSize: '0.9rem',
-              textDecoration: 'none'
-            }}>
-            &larr; Volver al Dashboard
+              textDecoration: 'none',
+              transition: 'color 0.2s'
+            }}
+          >
+            <ArrowLeft size={16} /> Volver al Dashboard
           </Link>
-          <h1 className={styles.title}>Memoria Semántica (RAG)</h1>
+          <motion.h1 
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            style={{ fontSize: '2rem', fontWeight: 600, margin: '0 0 0.5rem 0', color: 'var(--foreground)' }}
+          >
+            Memoria Semántica (RAG)
+          </motion.h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem' }}>Inyecta PDFs y manuales en el cerebro del bot al instante.</p>
         </div>
-        <button className={styles.createBtn} style={{ padding: '0.8rem 1.5rem', background: 'var(--foreground)', color: 'var(--background)', borderRadius: 'var(--radius-lg)', fontWeight: 600, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <span style={{ fontSize: '1.2rem' }}>+</span> Subir Documento
-        </button>
       </header>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '1.5rem', marginBottom: '2rem' }}>
-        <div style={{ gridColumn: 'span 4', background: 'var(--surface-dark)', color: 'var(--text-on-dark)', padding: '2rem', borderRadius: 'var(--radius-lg)' }}>
-          <h3 style={{ fontSize: '1rem', color: 'var(--text-muted-on-dark)', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Fragmentos Vectorizados</h3>
-          <div style={{ fontSize: '3rem', fontWeight: 600 }}>
-            {loading ? '...' : documents.reduce((acc, doc) => acc + Number(doc.chunks), 0)}
-          </div>
+        {/* Uploader Card */}
+        <div style={{ gridColumn: 'span 8' }}>
+          <Card 
+            style={{ 
+              height: '100%', 
+              padding: '2rem', 
+              display: 'flex', 
+              flexDirection: 'column',
+              border: isDragging ? '2px dashed var(--primary)' : '1px solid var(--glass-border)',
+              background: isDragging ? 'rgba(139, 92, 246, 0.05)' : 'var(--surface-dark)',
+              transition: 'all 0.2s ease'
+            }}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: '1rem' }}>
+              <AnimatePresence mode="wait">
+                {uploading ? (
+                  <motion.div key="uploading" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+                    <Loader2 size={48} color="var(--primary)" className={styles.spin} style={{ animation: 'spin 2s linear infinite' }} />
+                    <div style={{ color: 'var(--primary)', fontWeight: 600 }}>Procesando y vectorizando documento...</div>
+                  </motion.div>
+                ) : uploadStatus === 'success' ? (
+                  <motion.div key="success" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+                    <CheckCircle size={48} color="var(--success)" />
+                    <div style={{ color: 'var(--success)', fontWeight: 600 }}>¡Vectorizado con éxito!</div>
+                  </motion.div>
+                ) : uploadStatus === 'error' ? (
+                  <motion.div key="error" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+                    <AlertCircle size={48} color="var(--accent)" />
+                    <div style={{ color: 'var(--accent)', fontWeight: 600 }}>Fallo al procesar el documento.</div>
+                  </motion.div>
+                ) : (
+                  <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+                    <div style={{ 
+                      width: '80px', height: '80px', borderRadius: '50%', 
+                      background: 'rgba(139, 92, 246, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}>
+                      <UploadCloud size={36} color="var(--primary)" />
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: '1.2rem', fontWeight: 600, margin: '0 0 0.5rem 0' }}>Arrastra tus archivos aquí</h3>
+                      <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.95rem' }}>Soportado: .PDF, .TXT, .MD</p>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', width: '100%' }}>
+                      <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase' }}>O también</span>
+                      <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
+                    </div>
+                    <button 
+                      onClick={() => fileInputRef.current?.click()}
+                      style={{ 
+                        padding: '0.6rem 1.5rem', background: 'rgba(255,255,255,0.1)', color: 'var(--foreground)', 
+                        border: '1px solid rgba(255,255,255,0.2)', borderRadius: 'var(--radius-lg)', cursor: 'pointer',
+                        fontWeight: 500, transition: 'background 0.2s'
+                      }}
+                    >
+                      Explorar Archivos
+                    </button>
+                    <input 
+                      type="file" 
+                      ref={fileInputRef} 
+                      onChange={handleFileChange} 
+                      accept=".pdf,.txt,.md"
+                      style={{ display: 'none' }} 
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </Card>
         </div>
-        <div style={{ gridColumn: 'span 8', background: 'var(--surface-light)', padding: '2rem', borderRadius: 'var(--radius-lg)', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', border: '1px solid rgba(255,255,255,0.5)' }}>
-          <p style={{ color: 'var(--text-muted)', lineHeight: 1.6, margin: 0 }}>
-            <strong>Motor Híbrido Activo.</strong> El bot está combinando búsqueda vectorial (PGVector) con Full-Text Search y RRF (Reciprocal Rank Fusion) para encontrar las respuestas exactas en los manuales de tu negocio antes de contestar a los usuarios.
-          </p>
+
+        {/* Stats Card */}
+        <div style={{ gridColumn: 'span 4' }}>
+          <Card style={{ height: '100%', padding: '2rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <h3 style={{ fontSize: '0.9rem', color: 'var(--text-muted-on-dark)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Database size={16} /> Base Vectorial
+                </h3>
+              </div>
+              <div style={{ margin: '2rem 0' }}>
+                <span style={{ fontSize: '3.5rem', fontWeight: 700, color: 'var(--primary)', lineHeight: 1 }}>
+                  {loading ? '...' : documents.reduce((acc, doc) => acc + Number(doc.chunks), 0)}
+                </span>
+                <div style={{ fontSize: '1rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>Fragmentos Semánticos</div>
+              </div>
+            </div>
+            <div style={{ padding: '1rem', background: 'rgba(16, 185, 129, 0.1)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--success)', lineHeight: 1.5 }}>
+                <strong>Motor Híbrido Activo.</strong> PGVector (Coseno) + FTS (Full-Text) combinados con RRF.
+              </p>
+            </div>
+          </Card>
         </div>
       </div>
 
-      <div className={styles.tableContainer} style={{ background: 'transparent', boxShadow: 'none', border: 'none', padding: 0 }}>
+      <div>
+        <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '1.5rem', color: 'var(--foreground)' }}>Documentos Ingeridos</h3>
         {loading ? (
           <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-muted)' }}>Cargando documentos de memoria...</div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {documents.map(doc => (
-              <div key={doc.source_ref} className={styles.tableRow} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.5rem 2rem', background: 'var(--surface-light)', borderRadius: 'var(--radius-lg)', border: '1px solid rgba(255,255,255,0.5)', transition: 'all 0.3s ease', cursor: 'pointer', boxShadow: '0 5px 15px rgba(0,0,0,0.02)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                  <div style={{ width: '48px', height: '48px', background: 'rgba(0,0,0,0.03)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem' }}>
-                    {doc.source_ref.endsWith('.pdf') ? '📄' : doc.source_ref.endsWith('.csv') ? '📊' : '📝'}
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))', gap: '1rem' }}
+          >
+            {documents.map((doc, i) => (
+              <motion.div 
+                key={doc.source_ref} 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.05 }}
+              >
+                <Card hoverEffect style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.5rem', cursor: 'pointer' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <div style={{ width: '48px', height: '48px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {doc.source_ref.endsWith('.pdf') ? <FileText size={24} color="var(--primary)" /> : 
+                       doc.source_ref.endsWith('.csv') ? <FileSpreadsheet size={24} color="var(--success)" /> : 
+                       <File size={24} color="var(--secondary)" />}
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 0.25rem 0', wordBreak: 'break-all' }}>{doc.source_ref}</h3>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        Actualizado: {new Date(doc.last_embedded).toLocaleDateString()}
+                      </span>
+                    </div>
                   </div>
-                  <div>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '0.2rem' }}>{doc.source_ref}</h3>
-                    <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                      Actualizado el {new Date(doc.last_embedded).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </span>
+                  
+                  <div style={{ textAlign: 'right', marginLeft: '1rem' }}>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--primary)' }}>{doc.chunks}</div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Chunks</div>
                   </div>
-                </div>
-                
-                <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--foreground)' }}>{doc.chunks}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Chunks</div>
-                  </div>
-                  <span style={{ color: 'var(--primary)', fontWeight: 500, padding: '0.5rem 1rem', background: 'rgba(0,0,0,0.03)', borderRadius: 'var(--radius-md)' }}>Ver contenido &rarr;</span>
-                </div>
-              </div>
+                </Card>
+              </motion.div>
             ))}
-          </div>
+          </motion.div>
         )}
       </div>
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}} />
     </div>
   );
 }

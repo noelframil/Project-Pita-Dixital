@@ -64,8 +64,13 @@ const schema = z.object({
   EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
   EMBEDDING_TIMEOUT_MS: z.coerce.number().int().default(30_000),
 
+  // Stripe
+  STRIPE_SECRET_KEY: z.string().optional(),
+
   // ── Multimodal ──────────────────────────────────────────────
   WHISPER_MODEL: z.string().default('whisper-1'),
+  TTS_MODEL: z.string().default('tts-1'),
+  TTS_VOICE: z.enum(['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']).default('nova'),
   // Fijar el idioma sube bastante la precisión: una nota corta en gallego se
   // transcribe como portugués si se deja a que lo adivine.
   WHISPER_LANGUAGE: z.string().default('es'),

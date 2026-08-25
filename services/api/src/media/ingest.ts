@@ -8,6 +8,7 @@
 import { config } from '../config.js';
 import { transcribeAudio } from './audio.js';
 import { describeImage } from './vision.js';
+import { parseDocument } from './document.js';
 import { MediaError, sniffMedia, type MediaExtraction, type MediaInput } from './types.js';
 
 export interface IngestInput {
@@ -18,8 +19,10 @@ export interface IngestInput {
 export interface IngestResult {
   /** Lo que se le pasa a `think()` como mensaje del usuario. */
   message: string;
+  /** Imágenes en base64 para modelos multimodales. */
+  images?: Array<{ base64: string; mime: string }>;
   /** 'text' cuando no había adjuntos; si los había, el del primero. */
-  sourceKind: 'text' | 'audio' | 'image';
+  sourceKind: 'text' | 'audio' | 'image' | 'document';
   extractions: MediaExtraction[];
   /** Coste de transcribir y describir, aparte del turno del chat. */
   mediaCostMicros: number;
@@ -97,6 +100,7 @@ export async function ingest(input: IngestInput): Promise<IngestResult> {
 
   return {
     message: partes.join('\n\n'),
+    images: extractions.filter(e => e.kind === 'image' && e.base64 && e.mime).map(e => ({ base64: e.base64!, mime: e.mime! })),
     sourceKind: extractions[0]?.kind ?? media[0]?.kind ?? 'text',
     extractions,
     mediaCostMicros: extractions.reduce((sum, e) => sum + e.costMicros, 0),
@@ -113,6 +117,7 @@ async function extractOne(item: MediaInput): Promise<MediaExtraction> {
 
   if (kind === 'audio') return transcribeAudio({ ...item, kind: 'audio' });
   if (kind === 'image') return describeImage({ ...item, kind: 'image' });
+  if (kind === 'document') return parseDocument({ ...item, kind: 'document' });
 
   throw new MediaError(
     `Tipo de adjunto no soportado: ${item.mime}`,
@@ -130,7 +135,7 @@ async function extractOne(item: MediaInput): Promise<MediaExtraction> {
  */
 export async function fetchMedia(
   url: string,
-  kind: 'audio' | 'image',
+  kind: 'audio' | 'image' | 'document',
   headers: Record<string, string> = {},
 ): Promise<MediaInput> {
   const res = await fetch(url, {

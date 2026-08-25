@@ -4,6 +4,7 @@ import { decryptJson } from '../lib/crypto.js';
 import { think } from '../core/brain.js';
 import { claimProviderMessage } from '../core/conversations.js';
 import { whatsappAdapter } from '../channels/whatsapp.js';
+import { twilioAdapter } from '../channels/twilio.js';
 import type { ChannelAccount, InboundEvent } from '../channels/types.js';
 
 async function loadWhatsAppAccounts(): Promise<ChannelAccount[]> {
@@ -27,32 +28,103 @@ async function loadWhatsAppAccounts(): Promise<ChannelAccount[]> {
   }));
 }
 
-async function handleEvent(event: InboundEvent, account: ChannelAccount, app: any) {
+import { ingest } from '../media/ingest.js';
+import type { MediaInput } from '../media/types.js';
+
+async function handleEvent(event: InboundEvent, account: ChannelAccount, adapter: any, app: any) {
   if (!(await claimProviderMessage(event.eventId))) {
     app.log.debug({ eventId: event.eventId }, 'evento duplicado, ignorado');
     return;
   }
 
+  let ingested;
+  try {
+    // Descargar/resolver los adjuntos si los hay
+    const mediaInputs: MediaInput[] = [];
+    if (event.content.media) {
+      for (const m of event.content.media) {
+        if (adapter.resolveMedia) {
+          mediaInputs.push(await adapter.resolveMedia(m, account));
+        }
+      }
+    }
+
+    ingested = await ingest({
+      text: event.content.text,
+      media: mediaInputs.length > 0 ? mediaInputs : undefined,
+    });
+  } catch (err: any) {
+    app.log.error({ err }, 'Error ingiriendo media en webhook');
+    // Si falla el media completamente, se aborta o se procesa con error. Para mantenerlo simple, abortamos o procesamos texto vacío si no hay fallback.
+    ingested = { message: '', sourceKind: 'text', mediaCostMicros: 0, extractions: [], failures: [{ kind: 'media', userMessage: err.message }] };
+  }
+
+  let message = ingested?.message || '';
+  if (!message.trim() && ingested?.failures && ingested.failures.length > 0) {
+    message = ingested.failures[0]?.userMessage || '';
+  }
+
+  if (!message || !message.trim()) return;
+
   const result = await think({
     clientId: event.clientId,
-    channel: 'whatsapp',
+    channel: event.channel,
     channelUserId: event.sender.channelUserId,
     threadRef: event.threadRef,
-    message: event.content.text ?? '',
+    message,
     displayName: event.sender.displayName,
     channelAccountId: account.id,
     providerMsgId: event.eventId,
+    sourceKind: ingested.sourceKind as any,
+    mediaCostMicros: ingested.mediaCostMicros,
+    images: ingested.images,
   });
 
   if (result.handedOff) return;
 
-  for (const out of whatsappAdapter.render(result.reply, event.threadRef)) {
-    await whatsappAdapter.send(out, account);
+  let outboundMedia;
+  let replyText = result.reply;
+  
+  // Buscar etiqueta de adjunto: [FILE:/ruta/al/archivo.pdf]
+  const fileMatch = replyText.match(/\[FILE:(.+?)\]/);
+  if (fileMatch) {
+    const filePath = fileMatch[1]!.trim();
+    replyText = replyText.replace(fileMatch[0], '').trim();
+    try {
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      const buffer = await fs.readFile(filePath);
+      const ext = path.extname(filePath).toLowerCase();
+      const isImage = ['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(ext);
+      outboundMedia = {
+        kind: isImage ? 'image' : 'document',
+        buffer,
+        mime: isImage ? `image/${ext.replace('.', '')}` : 'application/pdf'
+      };
+    } catch (err) {
+      app.log.error({ err, filePath }, 'Error adjuntando archivo de salida');
+    }
+  } else if (ingested.sourceKind === 'audio') {
+    try {
+      const { generateAudio } = await import('../media/audio.js');
+      const buffer = await generateAudio(replyText);
+      outboundMedia = {
+        kind: 'audio' as const,
+        buffer,
+        mime: 'audio/ogg'
+      };
+    } catch (err) {
+      app.log.error({ err }, 'Error generando TTS de respuesta');
+    }
+  }
+
+  for (const out of adapter.render(replyText, event.threadRef, outboundMedia)) {
+    await adapter.send(out, account);
   }
 
   app.log.info(
     {
-      channel: 'whatsapp',
+      channel: event.channel,
       tokens: result.usage.totalTokens,
       costMicros: result.costMicros,
       latencyMs: result.latencyMs,
@@ -120,7 +192,7 @@ export const webhookRoutes: FastifyPluginAsync = async (app) => {
     reply.code(200).send('OK');
 
     for (const event of events) {
-      handleEvent(event, account, app).catch(err => {
+      handleEvent(event, account, emailAdapter, app).catch(err => {
         app.log.error({ err, eventId: event.eventId }, 'fallo procesando evento de email');
       });
     }
@@ -167,9 +239,63 @@ export const webhookRoutes: FastifyPluginAsync = async (app) => {
     reply.code(200).send('OK');
 
     for (const event of events) {
-      handleEvent(event, account, app).catch(err => {
+      handleEvent(event, account, whatsappAdapter, app).catch(err => {
         app.log.error({ err, eventId: event.eventId }, 'fallo procesando evento de WhatsApp');
       });
     }
+  });
+
+  // Webhook de Twilio para llamadas (TwiML)
+  app.post('/api/v1/webhooks/twilio', async (req, reply) => {
+    // Para simplificar MVP, tomamos la primera cuenta Twilio activa
+    const rows = await query<{ id: string, client_id: string, external_id: string, credentials: Buffer }>(
+      `SELECT id, client_id, external_id, credentials FROM channel_accounts WHERE channel = 'twilio' AND is_active = TRUE LIMIT 1`
+    );
+    
+    if (rows.length === 0) {
+      app.log.warn('No active twilio account');
+      return reply.code(200).type('text/xml').send('<Response><Say language="es-ES">Sistema no configurado.</Say></Response>');
+    }
+    
+    const account: ChannelAccount = {
+      id: rows[0]!.id,
+      clientId: rows[0]!.client_id,
+      channel: 'twilio',
+      externalId: rows[0]!.external_id,
+      credentials: decryptJson(rows[0]!.credentials),
+    };
+
+    const payload = req.body as any;
+    const events = twilioAdapter.parse(payload, account);
+
+    if (events.length === 0) {
+      // Iniciar llamada, pedir que hable
+      return reply.code(200).type('text/xml').send('<Response><Gather input="speech" action="/api/v1/webhooks/twilio" language="es-ES"><Say language="es-ES">Hola, soy Pita Dixital. ¿En qué puedo ayudarte?</Say></Gather></Response>');
+    }
+
+    const event = events[0]!;
+    
+    // Procesar la entrada con IA
+    const result = await think({
+      clientId: event.clientId,
+      channel: event.channel,
+      channelUserId: event.sender.channelUserId,
+      threadRef: event.threadRef,
+      message: event.content.text || '',
+      displayName: event.sender.displayName,
+      channelAccountId: account.id,
+      providerMsgId: event.eventId,
+    });
+
+    // Twilio Response TwiML
+    const twiml = `
+      <Response>
+        <Gather input="speech" action="/api/v1/webhooks/twilio" language="es-ES">
+          <Say language="es-ES" voice="Polly.Lucia-Neural">${result.reply}</Say>
+        </Gather>
+      </Response>
+    `;
+
+    reply.code(200).type('text/xml').send(twiml);
   });
 };

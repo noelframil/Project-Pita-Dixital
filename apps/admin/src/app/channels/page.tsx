@@ -84,6 +84,14 @@ export default function ChannelsPage() {
       description: 'Para enviar correos en frío, campañas y captar inversores. Protegido con webhooks.',
       color: '#000000',
       placeholder: 'Pega aquí la API Key de Resend'
+    },
+    {
+      id: 'twilio',
+      name: 'Llamadas Telefónicas',
+      icon: '📞',
+      description: 'Permite al bot atender y realizar llamadas usando Twilio Voice. Responde de forma síncrona.',
+      color: '#F22F46',
+      placeholder: 'Pega aquí tu Twilio Auth Token'
     }
   ];
 

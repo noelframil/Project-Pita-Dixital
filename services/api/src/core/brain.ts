@@ -87,6 +87,7 @@ export interface ThinkRequest {
   sourceKind?: 'text' | 'audio' | 'image';
   /** Coste de transcribir o describir, que no es del turno de chat. */
   mediaCostMicros?: number;
+  images?: Array<{ base64: string; mime: string }>;
 }
 
 export interface ThinkResult {
@@ -216,6 +217,18 @@ export async function think(req: ThinkRequest): Promise<ThinkResult> {
     entries.map((e) => e.message),
     cfg.context_token_budget,
   );
+
+  // Adjuntar imágenes al último mensaje si existen
+  if (req.images && req.images.length > 0 && kept.length > 0) {
+    const lastMsg = kept[kept.length - 1]!;
+    if (lastMsg.role === 'user') {
+      const parts: any[] = [{ type: 'text', text: typeof lastMsg.content === 'string' ? lastMsg.content : lastMsg.content.map((c: any) => c.text).join('') }];
+      for (const img of req.images) {
+        parts.push({ type: 'image_url', image_url: { url: `data:${img.mime};base64,${img.base64}` } });
+      }
+      lastMsg.content = parts;
+    }
+  }
   let summary = conversation.summary;
 
   if (dropped.length > 0) {

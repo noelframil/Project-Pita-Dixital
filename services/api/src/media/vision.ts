@@ -85,7 +85,7 @@ export async function describeImage(input: MediaInput): Promise<MediaExtraction>
     );
   }
 
-  return { ...extraction, kind: 'image', latencyMs: Date.now() - started };
+  return { ...extraction, kind: 'image', latencyMs: Date.now() - started, base64, mime: sniffed.mime };
 }
 
 async function describeWithAnthropic(

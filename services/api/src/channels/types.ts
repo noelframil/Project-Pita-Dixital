@@ -37,6 +37,11 @@ export interface InboundEvent {
 export interface OutboundMessage {
   threadRef: string;
   text: string;
+  media?: {
+    kind: 'audio' | 'image' | 'video' | 'document';
+    buffer: Buffer;
+    mime: string;
+  };
 }
 
 export interface ChannelAccount {
@@ -64,8 +69,11 @@ export interface ChannelAdapter {
   /** Un webhook puede traer varios eventos: Meta los agrupa por lotes. */
   parse(payload: unknown, account: ChannelAccount): InboundEvent[];
 
+  /** Si el canal entrega IDs de medios en vez de URLs públicas, este método los descarga. */
+  resolveMedia?(media: { kind: string; url: string; mime: string }, account: ChannelAccount): Promise<import('../media/types.js').MediaInput>;
+
   /** Adapta la respuesta a los límites del canal ANTES de enviarla. */
-  render(reply: string, threadRef: string): OutboundMessage[];
+  render(reply: string, threadRef: string, media?: OutboundMessage['media']): OutboundMessage[];
 
   send(msg: OutboundMessage, account: ChannelAccount): Promise<{ providerMsgId: string }>;
 }

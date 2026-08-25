@@ -255,7 +255,8 @@ export async function executeTool(
   }
 
   if (tool.kind === 'native') {
-    return executeNativeTool(tool, input, ctx.clientId);
+    const nativeResult = await executeNativeTool(tool, input, ctx);
+    return { content: nativeResult.content, isError: false, latencyMs: Date.now() - started };
   }
 
   try {

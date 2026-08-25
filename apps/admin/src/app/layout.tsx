@@ -27,6 +27,7 @@ export default function RootLayout({
           {/* Gradients for Premium Glassmorphism */}
           <div className="bg-orb orb-1"></div>
           <div className="bg-orb orb-2"></div>
+          <div className="bg-orb orb-3"></div>
           
           <div className="glass-container">
             <Sidebar />

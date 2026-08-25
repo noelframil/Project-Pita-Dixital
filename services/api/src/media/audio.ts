@@ -129,3 +129,51 @@ export async function transcribeAudio(input: MediaInput): Promise<MediaExtractio
     latencyMs: Date.now() - started,
   };
 }
+
+/**
+ * Genera un archivo de audio (TTS) usando OpenAI.
+ */
+export async function generateAudio(text: string): Promise<Buffer> {
+  if (!config.OPENAI_API_KEY) {
+    throw new MediaError(
+      'OPENAI_API_KEY no configurada; TTS la necesita.',
+      'Ahora mismo no puedo generar notas de voz.'
+    );
+  }
+
+  let res: Response;
+  try {
+    res = await fetch('https://api.openai.com/v1/audio/speech', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        authorization: `Bearer ${config.OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: config.TTS_MODEL,
+        input: text,
+        voice: config.TTS_VOICE,
+        response_format: 'ogg'
+      }),
+      signal: AbortSignal.timeout(config.MEDIA_TIMEOUT_MS),
+    });
+  } catch (err) {
+    const timeout = err instanceof Error && err.name === 'TimeoutError';
+    throw new MediaError(
+      `Fallo llamando a TTS: ${timeout ? 'timeout' : String(err)}`,
+      'No he podido generar la nota de voz.'
+    );
+  }
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new MediaError(
+      `TTS ${res.status}: ${body.slice(0, 300)}`,
+      'No he podido generar la nota de voz.'
+    );
+  }
+
+  const arrayBuffer = await res.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+

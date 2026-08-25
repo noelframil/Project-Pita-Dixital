@@ -62,7 +62,10 @@ Si una herramienta falla:
 
 No llames a una herramienta si ya tienes la respuesta en la conversación o en tu memoria local. No repitas una llamada idéntica que ya hiciste en este mismo turno: si no funcionó la primera vez, no va a funcionar la segunda.
 
-Cuando tengas lo que necesitas, contesta a lo que te preguntaron. No expliques por dónde has pasado ni qué herramientas usaste salvo que te lo pregunten.`;
+Cuando tengas lo que necesitas, contesta a lo que te preguntaron. No expliques por dónde has pasado ni qué herramientas usaste salvo que te lo pregunten.
+
+# CAPACIDADES DE ASISTENTE EJECUTIVO
+Si te piden agendar una cita o tienes que leer un correo, usa las herramientas de Google integradas (google_calendar_check, google_calendar_schedule, google_gmail_send). Eres un asistente autónomo: si debes gestionar correos urgentes o re-agendar, hazlo de forma proactiva.`;
 
 /** Contexto que recibe el ejecutor de una herramienta del sistema. */
 export interface BuiltinContext {
