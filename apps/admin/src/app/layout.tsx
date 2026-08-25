@@ -24,6 +24,10 @@ export default function RootLayout({
     <html lang="es" className={inter.variable}>
       <body>
         <div className="app-wrapper">
+          {/* Gradients for Premium Glassmorphism */}
+          <div className="bg-orb orb-1"></div>
+          <div className="bg-orb orb-2"></div>
+          
           <div className="glass-container">
             <Sidebar />
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>

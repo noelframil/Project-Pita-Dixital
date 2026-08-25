@@ -94,19 +94,19 @@ describe('executeTool — nunca lanza, siempre devuelve texto', () => {
 
   it('rechaza una dirección interna también en ejecución', async () => {
     // Segunda barrera: un nombre público puede resolver a una IP interna.
-    const res = await executeTool(tool('https://127.0.0.1/secreto'), {});
+    const res = await executeTool(tool('https://127.0.0.1/secreto'), {}, { clientId: '00000000-0000-0000-0000-0000000000c1', runId: 'test-run' });
     assert.equal(res.isError, true);
     assert.match(res.content, /interna/);
   });
 
   it('devuelve el parámetro que falta como texto, no como excepción', async () => {
-    const res = await executeTool(tool('https://api.ejemplo.com/{{q}}'), {});
+    const res = await executeTool(tool('https://api.ejemplo.com/{{q}}'), {}, { clientId: '00000000-0000-0000-0000-0000000000c1', runId: 'test-run' });
     assert.equal(res.isError, true);
     assert.match(res.content, /prueba/);
   });
 
   it('mide la latencia aunque falle', async () => {
-    const res = await executeTool(tool('https://127.0.0.1/x'), {});
+    const res = await executeTool(tool('https://127.0.0.1/x'), {}, { clientId: '00000000-0000-0000-0000-0000000000c1', runId: 'test-run' });
     assert.ok(res.latencyMs >= 0);
   });
 });

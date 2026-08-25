@@ -69,6 +69,9 @@ export interface BuiltinContext {
   conversationId: string;
   runId: string;
   iteration: number;
+  clientId: string;
+  sessionId?: string;
+  channel?: string;
 }
 
 /**
@@ -138,15 +141,18 @@ export interface AgentRunOptions {
   provider: string;
   model: string;
   system: string;
+  conversationId: string;
+  clientId: string;
+  sessionId?: string;
+  channel?: string;
   messages: ChatMessage[];
   temperature: number;
   maxTokens: number;
   maxIterations: number;
   /** Herramientas del cliente, ya cargadas y descifradas. */
   tools: RegisteredTool[];
-  /** Herramientas del sistema: memoria, delegación, handoff. */
+  /** Herramientas inyectadas por el framework (ej. delegate). */
   builtins?: BuiltinTool[];
-  conversationId: string;
   /** Reutiliza un identificador de turno existente. Si falta, se genera uno. */
   runId?: string;
   /** Quién ejecuta este bucle. Va a las trazas. */
@@ -365,13 +371,17 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
     // El modelo puede pedir varias a la vez; encadenarlas sumaría latencias sin
     // motivo. Todos los resultados vuelven juntos en la siguiente vuelta.
     const executed = await Promise.all(
-      result.toolCalls.map((call) =>
-        runOne(call, byName, builtins, seen, {
+      result.toolCalls.map((call) => {
+        const ctx: BuiltinContext = {
           conversationId: opts.conversationId,
           runId,
           iteration,
-        }),
-      ),
+          clientId: opts.clientId,
+          sessionId: opts.sessionId,
+          channel: opts.channel,
+        };
+        return runOne(call, byName, builtins, seen, ctx);
+      }),
     );
 
     const stepResults: AgentStep['results'] = [];
@@ -655,7 +665,7 @@ async function runOne(
   }
 
   // ── Herramienta HTTP del cliente ──────────────────────────────
-  const result = await executeTool(tool!, call.input);
+  const result = await executeTool(tool!, call.input, { clientId: ctx.clientId, runId: ctx.runId, sessionId: ctx.sessionId, channel: ctx.channel });
 
   await recordInvocation({
     conversationId: ctx.conversationId,

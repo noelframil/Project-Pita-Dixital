@@ -32,6 +32,7 @@ function baseOptions(overrides: Partial<Parameters<typeof runAgent>[0]> = {}) {
     maxIterations: 2,
     tools: [] as RegisteredTool[],
     conversationId: '00000000-0000-0000-0000-000000000001',
+    clientId: '00000000-0000-0000-0000-0000000000c1',
     ...overrides,
   };
 }

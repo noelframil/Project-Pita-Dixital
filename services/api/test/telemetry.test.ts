@@ -210,6 +210,7 @@ describe('el agente sigue funcionando con la auditoría rota', () => {
       maxIterations: 3,
       tools: [] as RegisteredTool[],
       conversationId: '00000000-0000-0000-0000-000000000001',
+      clientId: '00000000-0000-0000-0000-0000000000c1',
       ...overrides,
     };
   }

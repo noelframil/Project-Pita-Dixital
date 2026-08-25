@@ -73,6 +73,7 @@ interface ConversationRow {
  * aquí: separar la redacción del envío permite probar esto sin salir a la red y
  * mantiene el envío donde ya vive, en los adaptadores de canal.
  */
+
 export async function composeProactiveMessage(params: {
   clientId: string;
   sessionId: string;

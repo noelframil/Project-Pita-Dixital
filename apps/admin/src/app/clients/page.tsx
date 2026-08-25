@@ -39,10 +39,10 @@ export default function ClientsPage() {
     <div className={styles.container}>
       <header className={styles.header}>
         <div>
-          <Link href="/" style={{ color: 'var(--primary)', marginBottom: '1rem', display: 'inline-block' }}>
+          <Link href="/" style={{ color: 'var(--text-muted)', marginBottom: '0.5rem', display: 'inline-block', fontSize: '0.9rem', textDecoration: 'none' }}>
             &larr; Volver al Dashboard
           </Link>
-          <h1 className={styles.title}>Clientes</h1>
+          <h1 className={styles.title}>Agentes & Autoconfig</h1>
         </div>
         <button className={styles.button}>+ Nuevo Cliente</button>
       </header>

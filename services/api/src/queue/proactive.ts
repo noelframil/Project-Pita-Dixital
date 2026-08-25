@@ -170,3 +170,62 @@ export async function closeProactiveQueue(): Promise<void> {
   await queue.close();
   queue = null;
 }
+
+/**
+ * Programa una secuencia de seguimiento automático para captación.
+ * Encola el segundo toque (2 días) y el tercer toque (5 días).
+ */
+export async function scheduleFollowUpSequence(clientId: string, sessionId: string, channel: string) {
+  // Toque 2: En 2 días
+  await scheduleProactiveMessage({
+    clientId,
+    sessionId,
+    channel,
+    contextPrompt: 'Han pasado 2 días desde tu primer correo y no ha respondido. Escríbele un breve seguimiento amable recordando el valor que ofreces.',
+    sendAt: new Date(Date.now() + 2 * 24 * 3600 * 1000),
+    dedupeKey: `followup2-${sessionId}`
+  });
+
+  // Toque 3: En 5 días
+  await scheduleProactiveMessage({
+    clientId,
+    sessionId,
+    channel,
+    contextPrompt: 'Han pasado 5 días y sigue sin responder. Escríbele un mensaje de ruptura (break-up email), amable, diciendo que asumes que no es buen momento y cierras el expediente.',
+    sendAt: new Date(Date.now() + 5 * 24 * 3600 * 1000),
+    dedupeKey: `followup3-${sessionId}`
+  });
+}
+
+/** 
+ * Cancela todos los seguimientos pendientes de una conversación
+ * Se llama cuando el usuario responde por fin.
+ */
+export async function cancelAllFollowUps(conversationId: string) {
+  const rows = await query<{ id: string }>(`SELECT id FROM proactive_jobs WHERE conversation_id = $1 AND status = 'queued'`, [conversationId]);
+  for (const row of rows) {
+    await cancelProactiveJob(row.id);
+  }
+}
+
+/**
+ * Programa un seguimiento dinámico con una instrucción libre.
+ * Útil para cuando el bot decide proactivamente que debe hacer un seguimiento en X horas.
+ */
+export async function scheduleDynamicFollowUp(
+  clientId: string, 
+  sessionId: string, 
+  channel: string, 
+  hours: number, 
+  contextPrompt: string
+) {
+  await scheduleProactiveMessage({
+    clientId,
+    sessionId,
+    channel,
+    contextPrompt,
+    sendAt: new Date(Date.now() + hours * 3600 * 1000),
+    dedupeKey: `dynamic-${sessionId}-${Date.now()}`
+  });
+}
+

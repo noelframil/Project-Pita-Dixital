@@ -37,6 +37,9 @@ function baseOptions(overrides: Partial<Parameters<typeof runAgent>[0]> = {}) {
     maxIterations: 3,
     tools: [] as RegisteredTool[],
     conversationId: '00000000-0000-0000-0000-000000000001',
+    // clientId pasó a ser obligatorio al añadirse las herramientas nativas:
+    // sin él no se puede resolver a qué cliente pertenece la ejecución.
+    clientId: '00000000-0000-0000-0000-0000000000c1',
     ...overrides,
   };
 }

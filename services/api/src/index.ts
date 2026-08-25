@@ -9,6 +9,7 @@ import { inboundRoutes } from './routes/inbound.js';
 import { handoffRoutes } from './routes/handoff.js';
 import { adminRoutes } from './routes/admin.js';
 import { webhookRoutes } from './routes/webhooks.js';
+import { oauthRoutes } from './routes/oauth.js';
 import { startTelegramPolling } from './channels/telegram.js';
 import { startHandoffWorker } from './core/handoff.js';
 import { flushTraces } from './core/telemetry.js';
@@ -95,6 +96,7 @@ await app.register(inboundRoutes);
 await app.register(handoffRoutes);
 await app.register(adminRoutes);
 await app.register(webhookRoutes);
+await app.register(oauthRoutes);
 
 const stopTelegram = await startTelegramPolling(app.log);
 // Los avisos de handoff no se mandan dentro de la petición del usuario: si el
