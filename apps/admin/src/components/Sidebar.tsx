@@ -13,7 +13,9 @@ import {
   Zap,
   MessageSquare,
   Settings,
-  Inbox
+  Inbox,
+  Terminal,
+  Blocks
 } from 'lucide-react';
 
 const navItems = [
@@ -26,6 +28,7 @@ const navItems = [
   { name: 'Integraciones & Tools', path: '/integrations', icon: Zap },
   { name: 'Canales', path: '/channels', icon: MessageSquare },
   { name: 'Bandeja Handoff', path: '/inbox', icon: Inbox },
+  { name: 'Sandbox', path: '/sandbox', icon: Terminal },
 ];
 
 export default function Sidebar() {

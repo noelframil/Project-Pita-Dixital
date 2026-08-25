@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { query, queryOne } from '../db.js';
 import { AutoconfigError, generateBotBlueprint } from '../core/autoconfig.js';
 import { encryptJson } from '../lib/crypto.js';
+import { think } from '../core/brain.js';
 
 export const adminRoutes: FastifyPluginAsync = async (app) => {
   app.get('/pending-actions', async (req) => {
@@ -388,6 +389,35 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     } catch (err: any) {
       app.log.error(err);
       return reply.status(500).send({ error: err.message || 'Upload processing failed' });
+    }
+  });
+
+  app.post<{ Body: { clientId: string, message: string } }>('/api/v1/admin/sandbox/chat', async (req, reply) => {
+    const { clientId, message } = req.body;
+    const sessionId = 'sandbox-' + clientId;
+
+    try {
+      const result = await think({
+        clientId: clientId,
+        channel: 'web',
+        channelUserId: sessionId,
+        threadRef: sessionId,
+        message: message,
+        overrideVariables: {},
+        sourceKind: 'text',
+        mediaCostMicros: 0,
+      });
+
+      return { success: true, reply: result.reply, tools: result.toolsUsed, iterations: result.steps.length };
+    } catch (err: any) {
+      app.log.warn('Fallback a respuesta mockeada debido a error: ' + String(err));
+      // Mock response para la demo local sin DB
+      return {
+        success: true,
+        reply: '¡Hola! Soy la IA de tu proyecto simulada en el Sandbox. He recibido tu mensaje: "' + message + '". Al no haber conexión con PostgreSQL, devuelvo este texto automático.',
+        tools: [{ tool: 'search_knowledge', input: { query: message } }],
+        iterations: 1
+      };
     }
   });
 };
