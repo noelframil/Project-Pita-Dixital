@@ -89,42 +89,17 @@ async function loadEmailAccount(clientId?: string): Promise<ChannelAccount | nul
 }
 
 export const webhookRoutes: FastifyPluginAsync = async (app) => {
-  app.post('/api/v1/webhooks/resend', async (req, reply) => {
-    const payload = req.body as any;
-    
-    // Verify signature (optional for now, but recommended in production via Svix)
-    const type = payload.type;
-
-    if (type === 'email.bounced' || type === 'email.complained') {
-      const email = payload.data?.to?.[0];
-      if (email) {
-        // Suppress email
-        app.log.warn({ email, type }, 'Email rebotado o queja. Añadiendo a lista de supresión.');
-        // Asumimos que el email está en un contact_identities
-        await query(
-          `UPDATE contact_identities 
-              SET is_active = FALSE 
-            WHERE channel = 'email' AND channel_user_id = $1`,
-          [email]
-        );
-      }
-      return reply.code(200).send('OK');
-    }
-
-    // Incoming email (email.received doesn't officially exist as such in standard Resend yet, 
-    // but we simulate inbound webhook parsing)
-    const account = await loadEmailAccount();
-    if (!account) return reply.code(200).send('No active email account');
-
-    const events = emailAdapter.parse(payload, account);
-    reply.code(200).send('OK');
-
-    for (const event of events) {
-      handleEvent(event, account, app).catch(err => {
-        app.log.error({ err, eventId: event.eventId }, 'fallo procesando evento de email');
-      });
-    }
-  });
+  // El webhook de Resend vive en routes/inbound.ts, no aquí.
+  //
+  // Esta ruta estaba duplicada y Fastify se negaba a arrancar. Se conserva la
+  // otra por dos motivos concretos:
+  //
+  //   1. Verifica la firma svix. Esta no lo hacía —"opcional por ahora"— y eso
+  //      deja el endpoint abierto a cualquiera que conozca la URL.
+  //   2. Los rebotes van a la tabla `suppression`, que es la que cruza el motor
+  //      de campañas antes de cada envío. Marcarlos en `contact_identities`
+  //      parece equivalente pero no lo ve nadie: la dirección rebotada seguiría
+  //      recibiendo correos.
 
   // Verificación del Webhook (hub.challenge)
   app.get<{ Querystring: { 'hub.mode': string; 'hub.challenge': string; 'hub.verify_token': string } }>('/api/v1/webhooks/whatsapp', async (req, reply) => {

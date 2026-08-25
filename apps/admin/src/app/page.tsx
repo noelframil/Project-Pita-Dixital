@@ -1,7 +1,22 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
 import Link from "next/link";
 import styles from "./page.module.css";
 
 export default function Home() {
+  // Cifras reales del backend. La plantilla traía valores fijos —1.402 chunks,
+  // 14,20 EUR de gasto— que no salían de ningún sitio.
+  const [datos, setDatos] = useState<any>(null);
+  useEffect(() => {
+    fetch("/api/v1/admin/overview")
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setDatos)
+      .catch(() => setDatos(null));
+  }, []);
+  const n = (v: unknown, alt = "—") => (v === null || v === undefined ? alt : String(v));
+
   return (
     <div className={styles.dashboardGrid}>
       {/* Header / Intro */}
@@ -27,11 +42,11 @@ export default function Home() {
         <div style={{ display: 'flex', gap: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted-on-dark)' }}>Latencia Media</div>
-            <div style={{ fontSize: '1.2rem', fontWeight: 500, color: 'var(--text-on-dark)' }}>1.25s</div>
+            <div style={{ fontSize: '1.2rem', fontWeight: 500, color: 'var(--text-on-dark)' }}>{datos?.ultimas_24h?.latencia_ms ? `${datos.ultimas_24h.latencia_ms} ms` : "—"}</div>
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted-on-dark)' }}>Tokens / H</div>
-            <div style={{ fontSize: '1.2rem', fontWeight: 500, color: 'var(--text-on-dark)' }}>45.2K</div>
+            <div style={{ fontSize: '1.2rem', fontWeight: 500, color: 'var(--text-on-dark)' }}>{datos ? n(datos.ultimas_24h?.tokens) : "…"}</div>
           </div>
         </div>
       </div>
@@ -45,7 +60,7 @@ export default function Home() {
           Arquitectura multi-agente activa. El orquestador está delegando tareas a los especialistas.
         </p>
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: '1rem' }}>
-          <span style={{ fontSize: '3rem', fontWeight: 600, lineHeight: 1 }}>3</span>
+          <span style={{ fontSize: '3rem', fontWeight: 600, lineHeight: 1 }}>{datos ? n(datos.subagentes) : "…"}</span>
           <span style={{ color: 'var(--primary)', fontWeight: 500, fontSize: '0.9rem' }}>Gestionar &rarr;</span>
         </div>
       </Link>
@@ -59,7 +74,7 @@ export default function Home() {
           Webhooks y Function Calling conectados. El bot puede ejecutar acciones en el mundo real.
         </p>
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: '1rem' }}>
-          <span style={{ fontSize: '3rem', fontWeight: 600, lineHeight: 1 }}>4</span>
+          <span style={{ fontSize: '3rem', fontWeight: 600, lineHeight: 1 }}>{datos ? n(datos.herramientas) : "…"}</span>
           <span style={{ color: 'var(--primary)', fontWeight: 500, fontSize: '0.9rem' }}>Configurar &rarr;</span>
         </div>
       </Link>
@@ -80,7 +95,7 @@ export default function Home() {
         <div style={{ background: 'rgba(0,0,0,0.03)', borderRadius: 'var(--radius-md)', padding: '1.5rem', marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Chunks Vectorizados</div>
-            <div style={{ fontSize: '1.8rem', fontWeight: 600, color: 'var(--foreground)' }}>1,402</div>
+            <div style={{ fontSize: '1.8rem', fontWeight: 600, color: 'var(--foreground)' }}>{datos ? n(datos.conocimiento) : "…"}</div>
           </div>
           <span style={{ color: 'var(--primary)', fontWeight: 500, fontSize: '0.9rem' }}>Actualizar &rarr;</span>
         </div>
@@ -101,7 +116,7 @@ export default function Home() {
         <div style={{ background: 'rgba(0,0,0,0.03)', borderRadius: 'var(--radius-md)', padding: '1.5rem', marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Gasto Mensual</div>
-            <div style={{ fontSize: '1.8rem', fontWeight: 600, color: 'var(--foreground)' }}>$14.20</div>
+            <div style={{ fontSize: '1.8rem', fontWeight: 600, color: 'var(--foreground)' }}>{datos ? `${n(datos.coste_eur)} €` : "…"}</div>
           </div>
           <span style={{ color: 'var(--primary)', fontWeight: 500, fontSize: '0.9rem' }}>Ver Trazas &rarr;</span>
         </div>

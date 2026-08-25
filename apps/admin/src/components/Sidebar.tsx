@@ -1,7 +1,16 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import styles from "./Sidebar.module.css";
 
 export default function Sidebar() {
+  // Se usaba `pathname` para marcar el enlace activo sin declararlo en ningún
+  // sitio, así que el componente lanzaba ReferenceError al renderizar y el
+  // panel entero devolvía 500. usePathname es un hook de cliente: obliga a
+  // marcar el componente con "use client".
+  const pathname = usePathname();
+
   return (
     <aside className={styles.sidebar}>
       <div className={styles.logo}>

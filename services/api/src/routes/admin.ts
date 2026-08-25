@@ -45,6 +45,55 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return { message: 'Aprobado (simulado)' };
   });
 
+
+  /**
+   * Cifras reales del panel.
+   *
+   * Sustituye a los valores fijos que traía la plantilla. Un panel que enseña
+   * números inventados es peor que no tener panel: se toman decisiones con
+   * ellos y nadie sospecha hasta que ya da igual.
+   */
+  app.get('/api/v1/admin/overview', async (_req, reply) => {
+    const [subagentes, conocimiento, herramientas, coste, actividad, captacion] = await Promise.all([
+      queryOne<{ n: number }>(`SELECT count(*)::int AS n FROM sub_agents`),
+      queryOne<{ n: number }>(`SELECT count(*)::int AS n FROM knowledge_entries`),
+      queryOne<{ n: number }>(`SELECT count(*)::int AS n FROM tools`),
+      queryOne<{ eur: string }>(
+        `SELECT coalesce(round(sum(cost_micros)/1000000.0, 2), 0)::text AS eur FROM messages`,
+      ),
+      queryOne<{ mensajes: number; latencia: number | null; tokens: number }>(
+        `SELECT count(*)::int AS mensajes,
+                round(avg(latency_ms))::int AS latencia,
+                coalesce(sum(tokens_prompt + tokens_completion), 0)::int AS tokens
+           FROM messages WHERE created_at > NOW() - interval '24 hours'`,
+      ),
+      queryOne<{ prospectos: number; enviados: number; cuentas: number; supresion: number }>(
+        `SELECT (SELECT count(*)::int FROM prospects WHERE status = 'active')      AS prospectos,
+                (SELECT count(*)::int FROM campaign_sends WHERE status = 'sent')   AS enviados,
+                (SELECT count(*)::int FROM target_accounts WHERE status='pending') AS cuentas,
+                (SELECT count(*)::int FROM suppression)                            AS supresion`,
+      ),
+    ]);
+
+    return reply.send({
+      subagentes: subagentes?.n ?? 0,
+      conocimiento: conocimiento?.n ?? 0,
+      herramientas: herramientas?.n ?? 0,
+      coste_eur: coste?.eur ?? '0',
+      ultimas_24h: {
+        mensajes: actividad?.mensajes ?? 0,
+        latencia_ms: actividad?.latencia ?? null,
+        tokens: actividad?.tokens ?? 0,
+      },
+      captacion: {
+        prospectos_activos: captacion?.prospectos ?? 0,
+        correos_enviados: captacion?.enviados ?? 0,
+        cuentas_objetivo: captacion?.cuentas ?? 0,
+        en_supresion: captacion?.supresion ?? 0,
+      },
+    });
+  });
+
   app.get('/api/v1/admin/clients', async (req, reply) => {
     try {
       const rows = await query<{
