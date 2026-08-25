@@ -8,7 +8,8 @@
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "start": "node dist/index.js",
+    "start": "npm run migrate:prod && node dist/index.js",
+    "migrate:prod": "node dist/cli/migrate.js",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "node --import tsx --test --test-concurrency=1 test/*.test.ts",

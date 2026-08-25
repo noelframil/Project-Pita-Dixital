@@ -27,6 +27,9 @@ RUN npm ci --omit=dev
 # Copy built code
 COPY --from=builder /app/dist ./dist
 
+# Copy migrations for automatic deployment
+COPY migrations ./migrations
+
 # Set production environment
 ENV NODE_ENV=production
 
