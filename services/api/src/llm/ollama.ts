@@ -8,6 +8,7 @@ import {
   type CompletionResult,
   type LlmProvider,
   type ToolCall,
+  type ChatMessage,
 } from './types.js';
 
 interface OllamaToolCall {
@@ -34,6 +35,41 @@ interface OllamaChatResponse {
  * que se notan al integrar: los argumentos vienen ya parseados y las llamadas no
  * traen identificador.
  */
+
+/**
+ * Mensajes para Ollama.
+ *
+ * Ollama habla el dialecto de OpenAI *casi* entero, con una diferencia que
+ * rompe en cuanto el agente usa herramientas: en `tool_calls`, OpenAI espera
+ * `arguments` como cadena JSON y Ollama lo espera como objeto. Reutilizar
+ * `toOpenAiMessages` tal cual devuelve un 400:
+ *
+ *   cannot unmarshal string into Go struct field
+ *   ChatRequest.messages.tool_calls.function.arguments
+ *
+ * El error solo aparece al *reenviar* una llamada previa, así que un turno
+ * suelto funciona y la conversación se rompe en el segundo.
+ */
+function toOllamaMessages(mensajes: ChatMessage[]): unknown[] {
+  return toOpenAiMessages(mensajes).map((m) => {
+    const msg = m as { tool_calls?: Array<{ function?: { name: string; arguments: unknown } }> };
+    if (!msg.tool_calls?.length) return m;
+    return {
+      ...msg,
+      tool_calls: msg.tool_calls.map((c) => ({
+        ...c,
+        function: {
+          name: c.function?.name,
+          arguments:
+            typeof c.function?.arguments === 'string'
+              ? (JSON.parse(c.function.arguments || '{}') as Record<string, unknown>)
+              : (c.function?.arguments ?? {}),
+        },
+      })),
+    };
+  });
+}
+
 export const ollamaProvider: LlmProvider = {
   name: 'ollama',
 
@@ -45,7 +81,7 @@ export const ollamaProvider: LlmProvider = {
       body: JSON.stringify({
         model: req.model,
         stream: false,
-        messages: [{ role: 'system', content: req.system }, ...toOpenAiMessages(req.messages)],
+        messages: [{ role: 'system', content: req.system }, ...toOllamaMessages(req.messages)],
         ...(toOpenAiTools(req.tools) && { tools: toOpenAiTools(req.tools) }),
         // Ollama recibe el esquema tal cual en `format`. Los modelos pequeños
         // lo respetan peor que los grandes: por eso quien llama valida igual.

@@ -2,7 +2,9 @@ ALTER TABLE tools ADD COLUMN IF NOT EXISTS requires_approval BOOLEAN DEFAULT fal
 
 CREATE TABLE IF NOT EXISTS pending_actions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  client_id TEXT NOT NULL REFERENCES clients(id),
+  -- uuid, no text: clients.id es uuid y la clave foránea no se puede crear
+  -- entre tipos distintos.
+  client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
   run_id TEXT NOT NULL,
   tool_name TEXT NOT NULL,
   input JSONB NOT NULL,
