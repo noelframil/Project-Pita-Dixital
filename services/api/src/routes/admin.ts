@@ -94,6 +94,38 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
+
+  /** Detalle de la captación para el panel: campañas, envíos y prospectos. */
+  app.get('/api/v1/admin/outreach', async (_req, reply) => {
+    const [campanas, prospectos, supresion] = await Promise.all([
+      query<{ name: string; subject: string; segment: string | null; status: string;
+              enviados: number; rebotados: number }>(
+        `SELECT c.name, c.subject, c.segment, c.status,
+                count(*) FILTER (WHERE cs.status = 'sent')::int   AS enviados,
+                count(*) FILTER (WHERE cs.status = 'failed')::int AS rebotados
+           FROM campaigns c
+           LEFT JOIN campaign_sends cs ON cs.campaign_id = c.id
+          GROUP BY c.id, c.name, c.subject, c.segment, c.status
+          ORDER BY count(*) FILTER (WHERE cs.status = 'sent') DESC, c.name`,
+      ),
+      query<{ email: string; display_name: string | null; organisation: string | null;
+              role_title: string | null; status: string; enviados: number; ultimo: string | null }>(
+        `SELECT p.email, p.display_name, p.organisation, p.role_title, p.status,
+                count(cs.id) FILTER (WHERE cs.status = 'sent')::int AS enviados,
+                max(cs.sent_at)::text AS ultimo
+           FROM prospects p
+           LEFT JOIN campaign_sends cs ON cs.prospect_id = p.id
+          GROUP BY p.id, p.email, p.display_name, p.organisation, p.role_title, p.status
+          ORDER BY max(cs.sent_at) DESC NULLS LAST
+          LIMIT 100`,
+      ),
+      query<{ email: string; reason: string }>(
+        `SELECT email, reason FROM suppression ORDER BY created_at DESC LIMIT 50`,
+      ),
+    ]);
+    return reply.send({ campanas, prospectos, supresion });
+  });
+
   app.get('/api/v1/admin/clients', async (req, reply) => {
     try {
       const rows = await query<{

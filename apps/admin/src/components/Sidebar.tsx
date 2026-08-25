@@ -39,6 +39,11 @@ export default function Sidebar() {
             </Link>
           </li>
           <li>
+            <Link href="/outreach" className={`${styles.navItem} ${pathname === '/outreach' ? styles.active : ''}`}>
+              Captación
+            </Link>
+          </li>
+          <li>
             <Link href="/subagents" className={styles.navItem}>
               <span className={styles.iconPlaceholder} style={{ WebkitMaskImage: 'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22currentColor%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpolygon points=%2212 2 2 7 12 12 22 7 12 2%22/%3E%3Cpolyline points=%222 17 12 22 22 17%22/%3E%3Cpolyline points=%222 12 12 17 22 12%22/%3E%3C/svg%3E")' }}></span>
               Subagentes Expertos
