@@ -44,6 +44,11 @@ export default function Sidebar() {
             </Link>
           </li>
           <li>
+            <Link href="/sends" className={`${styles.navItem} ${pathname === '/sends' ? styles.active : ''}`}>
+              Correos enviados
+            </Link>
+          </li>
+          <li>
             <Link href="/chat" className={`${styles.navItem} ${pathname === '/chat' ? styles.active : ''}`}>
               Hablar con Pita
             </Link>

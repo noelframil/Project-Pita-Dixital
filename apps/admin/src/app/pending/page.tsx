@@ -22,7 +22,7 @@ export default function PendingActionsPage() {
 
   const fetchActions = async () => {
     try {
-      const res = await fetch("http://localhost:3000/api/v1/admin/pending-actions");
+      const res = await fetch("/api/v1/admin/pending-actions");
       const data = await res.json();
       setActions(data);
     } catch (err) {
@@ -34,7 +34,7 @@ export default function PendingActionsPage() {
 
   const handleApprove = async (id: string) => {
     try {
-      await fetch(`http://localhost:3000/api/v1/admin/pending-actions/${id}/approve`, {
+      await fetch(`/api/v1/admin/pending-actions/${id}/approve`, {
         method: "POST"
       });
       // Remove from list

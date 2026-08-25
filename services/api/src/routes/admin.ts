@@ -1,33 +1,48 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { query, queryOne } from '../db.js';
+import { config } from '../config.js';
 import { AutoconfigError, generateBotBlueprint } from '../core/autoconfig.js';
 import { encryptJson } from '../lib/crypto.js';
 
 export const adminRoutes: FastifyPluginAsync = async (app) => {
-  app.get('/pending-actions', async (req) => {
-    // MOCK CLIENT ID for now, like others
-    const clientId = 'mock-client-id';
+  /**
+   * Acciones pendientes de aprobación.
+   *
+   * El cliente llega por query string. Antes iba fijo a 'mock-client-id', que
+   * además de no existir es texto en una columna uuid: la consulta reventaba
+   * con un 500 en vez de devolver una lista vacía.
+   */
+  app.get('/api/v1/admin/pending-actions', async (req) => {
+    const { client } = req.query as { client?: string };
     const rows = await query(
-      `SELECT id, run_id, tool_name, input, status, created_at 
-       FROM pending_actions 
-       WHERE client_id = $1 AND status = 'pending'
-       ORDER BY created_at ASC`,
-      [clientId]
+      `SELECT pa.id, pa.run_id, pa.tool_name, pa.input, pa.status, pa.created_at,
+              c.slug AS client_slug, c.name AS client_name
+         FROM pending_actions pa
+         JOIN clients c ON c.id = pa.client_id
+        WHERE pa.status = 'pending'
+          AND ($1::text IS NULL OR c.slug = $1)
+        ORDER BY pa.created_at ASC`,
+      [client ?? null],
     );
     return rows;
   });
 
-  app.post('/pending-actions/:id/approve', async (req, reply) => {
-    const clientId = 'mock-client-id';
+  app.post('/api/v1/admin/pending-actions/:id/approve', async (req, reply) => {
     const params = req.params as { id: string };
 
+    // El id ya es único; filtrar además por un cliente inventado hacía que
+    // ninguna aprobación encontrara su fila.
     const rows = await query<any>(
-      `UPDATE pending_actions SET status = 'approved' WHERE id = $1 AND client_id = $2 RETURNING *`,
-      [params.id, clientId]
+      `UPDATE pending_actions SET status = 'approved' WHERE id = $1 RETURNING *`,
+      [params.id]
     );
     if (rows.length === 0) return reply.status(404).send({ error: 'Action not found' });
 
     const action = rows[0];
+    // El cliente sale de la propia acción: es el dueño de la herramienta que
+    // se va a ejecutar. Antes venía de una constante inventada, así que la
+    // búsqueda de la herramienta nunca encontraba nada.
+    const clientId = action.client_id as string;
     // In a real scenario, this would resume the agent or execute the tool now.
     // Since the original runId was paused, we could execute the tool natively here and notify the user.
     // For this prototype, we'll execute it natively and mark it as done.
@@ -124,6 +139,86 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       ),
     ]);
     return reply.send({ campanas, prospectos, supresion });
+  });
+
+
+  /**
+   * Correos enviados, con el cuerpo tal y como salió.
+   *
+   * El cuerpo se reconstruye a partir de la plantilla y los datos del
+   * prospecto, igual que hace el motor al enviar, porque el texto final no se
+   * guarda: guardarlo duplicaría el contenido de cada campaña en cada envío.
+   * El enlace de baja sí es el real, porque el token es único por envío.
+   */
+  app.get('/api/v1/admin/sends', async (req, reply) => {
+    const { limit } = req.query as { limit?: string };
+    const envios = await query<{
+      id: string; email: string; display_name: string | null;
+      organisation: string | null; role_title: string | null; source: string;
+      campana: string; asunto: string; plantilla: string;
+      from_name: string; from_email: string; reply_to: string | null;
+      status: string; sent_at: string | null; unsub_token: string; error: string | null;
+    }>(
+      `SELECT cs.id, p.email, p.display_name, p.organisation, p.role_title, p.source,
+              c.name AS campana, c.subject AS asunto, c.body_template AS plantilla,
+              c.from_name, c.from_email, c.reply_to,
+              cs.status, cs.sent_at::text, cs.unsub_token, cs.error
+         FROM campaign_sends cs
+         JOIN prospects p  ON p.id = cs.prospect_id
+         JOIN campaigns c  ON c.id = cs.campaign_id
+        WHERE cs.status IN ('sent','failed')
+        ORDER BY cs.sent_at DESC NULLS LAST
+        LIMIT $1`,
+      [Number(limit ?? 100)],
+    );
+
+    const base = config.PUBLIC_BASE_URL ?? `http://localhost:${config.PORT}`;
+
+    return reply.send({
+      envios: envios.map((e) => {
+        const nombre = (e.display_name ?? '').trim().split(/\s+/)[0] ?? '';
+        const motivo = e.organisation && e.role_title
+          ? `Le escribo por su posición en ${e.organisation}: el perfil de contraparte de esta operación encaja con el tipo de activo que cubren.`
+          : e.organisation
+            ? `Le escribo porque el perfil de contraparte de esta operación encaja con lo que cubren en ${e.organisation}.`
+            : 'Le escribo porque su perfil encaja con la contraparte que busca esta operación.';
+
+        const cuerpo = e.plantilla
+          .replace(/\{\{\s*first_name\s*\}\}/g, nombre)
+          .replace(/\{\{\s*full_name\s*\}\}/g, e.display_name ?? '')
+          .replace(/\{\{\s*organisation\s*\}\}/g, e.organisation ?? '')
+          .replace(/\{\{\s*role_title\s*\}\}/g, e.role_title ?? '')
+          .replace(/\{\{\s*motivo\s*\}\}/g, motivo);
+
+        const origen = e.source.startsWith('apollo')
+          ? 'Ha recibido este correo porque sus datos profesionales figuran en Apollo.io, una base de datos de contactos empresariales, y su perfil encaja con el tipo de contraparte de esta operación.'
+          : e.source === 'hunter'
+            ? 'Ha recibido este correo porque sus datos profesionales constan en Hunter.io, una base de datos de contactos empresariales, y su perfil encaja con el tipo de contraparte de esta operación.'
+            : `Ha recibido este correo porque sus datos profesionales constan en nuestro registro (origen: ${e.source}).`;
+
+        const unsub = `${base}/api/v1/outreach/unsubscribe/${e.unsub_token}`;
+
+        return {
+          id: e.id,
+          para: e.email,
+          nombre: e.display_name,
+          firma: e.organisation,
+          cargo: e.role_title,
+          // El remitente real es el configurado al enviar, no el que la campaña
+          // guardó al crearse: cambiar de dominio no reescribe campañas viejas,
+          // y mostrar el antiguo haría creer que salió desde otra dirección.
+          de: `${config.OUTREACH_FROM_NAME} <${config.OUTREACH_FROM_EMAIL ?? e.from_email}>`,
+          responder_a: config.OUTREACH_REPLY_TO ?? e.reply_to,
+          campana: e.campana,
+          asunto: e.asunto.replace(/\{\{\s*first_name\s*\}\}/g, nombre),
+          estado: e.status,
+          enviado: e.sent_at,
+          error: e.error,
+          unsubscribe_url: unsub,
+          cuerpo: `${cuerpo}\n\n—\n${origen}\nSi prefiere no recibir más comunicaciones, puede darse de baja aquí: ${unsub}\nLa baja es inmediata y no requiere responder a este correo.`,
+        };
+      }),
+    });
   });
 
   app.get('/api/v1/admin/clients', async (req, reply) => {

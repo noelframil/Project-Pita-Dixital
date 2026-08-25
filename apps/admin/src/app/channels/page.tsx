@@ -13,6 +13,21 @@ type Channel = {
 };
 
 export default function ChannelsPage() {
+  // El cliente se elige, no se inventa. 'mock-client-id' no existe y además es
+  // texto en una columna uuid: cualquier alta fallaba con un 500.
+  const [clientes, setClientes] = useState<{ slug: string; name: string }[]>([]);
+  const [clienteSel, setClienteSel] = useState("");
+  useEffect(() => {
+    fetch("/api/v1/admin/clients")
+      .then((r) => (r.ok ? r.json() : { clients: [] }))
+      .then((d) => {
+        const cs = d.clients ?? [];
+        setClientes(cs);
+        if (cs[0]) setClienteSel(cs[0].slug);
+      })
+      .catch(() => setClientes([]));
+  }, []);
+
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [showConfig, setShowConfig] = useState<string | null>(null);
@@ -44,7 +59,7 @@ export default function ChannelsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          clientId: 'mock-client-id', // TODO: Get actual client ID
+          clientId: clienteSel, // slug del cliente elegido arriba
           channel: channelKey,
           externalId: channelKey === 'telegram' ? 'bot' : 'whatsapp-business',
           credentials: { token: tokenInput }

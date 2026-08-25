@@ -48,7 +48,7 @@ export default function IntegrationsPage() {
             <p style={{ color: 'var(--text-muted)' }}>Herramientas activadas para este cliente. El agente decide cuándo y cómo utilizarlas en tiempo real.</p>
           </div>
           <a 
-            href="http://localhost:3000/api/v1/oauth/google" 
+            href="/api/v1/oauth/google" 
             style={{ 
               background: '#4285F4', 
               color: '#fff', 
