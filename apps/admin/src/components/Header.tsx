@@ -37,52 +37,55 @@ export default function Header() {
       display: 'flex',
       justifyContent: 'space-between',
       alignItems: 'center',
-      padding: '1.5rem 2.5rem',
+      padding: '1.5rem 2rem',
       background: 'transparent',
       position: 'relative',
-      zIndex: 'var(--z-header)'
+      zIndex: 'var(--z-header)',
+      borderBottom: '1px solid var(--glass-border)'
     }}>
-      <h1 style={{ 
-        fontSize: '1.5rem', 
-        fontWeight: 600, 
-        margin: 0, 
-        background: 'linear-gradient(90deg, #fff, #a1a1aa)',
-        WebkitBackgroundClip: 'text',
-        WebkitTextFillColor: 'transparent'
-      }}>
-        Dashboard
-      </h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Pita Dixital</span>
+        <span style={{ color: 'var(--border-subtle)' }}>/</span>
+        <h1 style={{ 
+          fontSize: '0.85rem', 
+          fontWeight: 500, 
+          margin: 0, 
+          color: 'var(--foreground)'
+        }}>
+          Dashboard
+        </h1>
+      </div>
       
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-        <Button variant="primary" size="sm" icon={<Plus size={16} />}>
-          Create
-        </Button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+        <button style={{
+          display: 'flex', alignItems: 'center', gap: '0.4rem',
+          padding: '0.4rem 0.75rem', background: 'var(--foreground)', color: 'var(--background)',
+          borderRadius: 'var(--radius-sm)', border: 'none', fontSize: '0.8rem', fontWeight: 500,
+          cursor: 'pointer'
+        }}>
+          <Plus size={14} /> Create
+        </button>
         
         <motion.button 
-          whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.95 }}
-          style={{ color: 'var(--text-muted)' }}
+          style={{ color: 'var(--text-muted)', background: 'transparent', border: 'none', cursor: 'pointer' }}
         >
-          <Search size={20} />
+          <Search size={16} />
         </motion.button>
         
         <div style={{ position: 'relative' }}>
           <motion.button 
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.95 }}
-            style={{ color: showNotifications ? 'var(--primary)' : 'var(--text-muted)', position: 'relative' }}
+            style={{ color: showNotifications ? 'var(--foreground)' : 'var(--text-muted)', position: 'relative', background: 'transparent', border: 'none', cursor: 'pointer' }}
             onClick={() => setShowNotifications(!showNotifications)}
           >
-            <Bell size={20} />
+            <Bell size={16} />
             <span style={{
               position: 'absolute',
-              top: -2,
-              right: -2,
-              width: '8px',
-              height: '8px',
+              top: 0,
+              right: 0,
+              width: '6px',
+              height: '6px',
               background: 'var(--accent)',
               borderRadius: '50%',
-              boxShadow: '0 0 10px var(--accent)'
             }}></span>
           </motion.button>
 
@@ -113,15 +116,15 @@ export default function Header() {
                 </div>
                 <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
                   {notifications.map((notif) => (
-                    <div key={notif.id} style={{ padding: '1rem', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', gap: '1rem', cursor: 'pointer', transition: 'background 0.2s', ...({ '&:hover': { background: 'rgba(255,255,255,0.02)' } } as any) }}>
+                    <div key={notif.id} style={{ padding: '0.75rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.02)', display: 'flex', gap: '0.75rem', cursor: 'pointer' }}>
                       <div style={{ 
-                        width: '8px', height: '8px', borderRadius: '50%', marginTop: '6px',
+                        width: '6px', height: '6px', borderRadius: '50%', marginTop: '6px',
                         background: notif.type === 'info' ? 'var(--secondary)' : notif.type === 'success' ? 'var(--success)' : 'var(--primary)'
                       }} />
                       <div>
-                        <h4 style={{ margin: '0 0 0.25rem 0', fontSize: '0.9rem', color: 'var(--foreground)' }}>{notif.title}</h4>
-                        <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{notif.desc}</p>
-                        <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.3)' }}>{notif.time}</span>
+                        <h4 style={{ margin: '0 0 0.25rem 0', fontSize: '0.85rem', fontWeight: 500, color: 'var(--foreground)' }}>{notif.title}</h4>
+                        <p style={{ margin: '0 0 0.25rem 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{notif.desc}</p>
+                        <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.3)' }}>{notif.time}</span>
                       </div>
                     </div>
                   ))}
@@ -131,7 +134,7 @@ export default function Header() {
           </AnimatePresence>
         </div>
 
-        <div style={{ width: '40px', height: '40px', borderRadius: '50%', overflow: 'hidden', border: '2px solid rgba(255,255,255,0.1)' }}>
+        <div style={{ width: '28px', height: '28px', borderRadius: '50%', overflow: 'hidden', border: '1px solid var(--glass-border)' }}>
           <img src="https://i.pravatar.cc/150?u=a042581f4e29026704d" alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         </div>
       </div>

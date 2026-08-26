@@ -136,6 +136,23 @@ export default function MemoryPage() {
           </motion.h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem' }}>Inyecta PDFs y manuales en el cerebro del bot al instante.</p>
         </div>
+        <Link href="/memory/graph"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            background: 'rgba(139, 92, 246, 0.1)',
+            color: 'var(--primary)',
+            border: '1px solid rgba(139, 92, 246, 0.3)',
+            padding: '0.75rem 1.25rem',
+            borderRadius: 'var(--radius-pill)',
+            textDecoration: 'none',
+            fontWeight: 600,
+            boxShadow: '0 4px 20px rgba(139, 92, 246, 0.2)'
+          }}
+        >
+          <Database size={18} /> Visualizar Grafo
+        </Link>
       </header>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '1.5rem', marginBottom: '2rem', position: 'relative', zIndex: 1 }}>

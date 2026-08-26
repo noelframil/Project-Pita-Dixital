@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import styles from '../clients/page.module.css';
+import { motion } from 'framer-motion';
+import { ArrowLeft, Plus, Brain, Database, Bot, Zap, Search } from 'lucide-react';
+import { Card } from '../../components/ui/Card';
 
 type SubAgent = {
   id: string;
@@ -32,54 +34,121 @@ export default function SubAgentsPage() {
   }, []);
 
   return (
-    <div className={styles.container}>
-      <header className={styles.header}>
+    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem' }}>
+      <header style={{ marginBottom: '3rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <Link href="/"
             style={{
               color: 'var(--text-muted)',
-              marginBottom: '0.5rem',
-              display: 'inline-block',
+              marginBottom: '1rem',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.5rem',
               fontSize: '0.9rem',
-              textDecoration: 'none'
-            }}>
-            &larr; Volver al Dashboard
+              textDecoration: 'none',
+              transition: 'color 0.2s'
+            }}
+          >
+            <ArrowLeft size={16} /> Volver al Dashboard
           </Link>
-          <h1 className={styles.title}>Subagentes Especialistas</h1>
+          <motion.h1 
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            style={{ fontSize: '2.5rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--foreground)' }}
+          >
+            Enjambre de Subagentes
+          </motion.h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem', margin: 0 }}>
+            Configura agentes especializados para delegar tareas complejas del orquestador.
+          </p>
         </div>
-        <button className={styles.createBtn} style={{ padding: '0.8rem 1.5rem', background: 'var(--foreground)', color: 'var(--background)', borderRadius: 'var(--radius-lg)', fontWeight: 600, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <span style={{ fontSize: '1.2rem' }}>+</span> Nuevo Subagente
-        </button>
+        <div style={{ display: 'flex', gap: '1rem' }}>
+          <Link href="/subagents/canvas"
+            style={{ 
+              display: 'flex', alignItems: 'center', gap: '0.5rem', 
+              padding: '0.8rem 1.5rem', background: 'rgba(139, 92, 246, 0.1)', color: 'var(--primary)', 
+              border: '1px solid rgba(139, 92, 246, 0.3)', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontWeight: 600,
+              textDecoration: 'none'
+            }}
+          >
+            <Brain size={18} /> Visualizar Topología
+          </Link>
+          <motion.button 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            style={{ 
+              display: 'flex', alignItems: 'center', gap: '0.5rem', 
+              padding: '0.8rem 1.5rem', background: 'var(--primary)', color: 'white', 
+              border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontWeight: 600
+            }}
+          >
+            <Plus size={18} /> Nuevo Subagente
+          </motion.button>
+        </div>
       </header>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '1.5rem', marginBottom: '2rem' }}>
-        <div style={{ gridColumn: 'span 12', background: 'var(--surface-light)', padding: '2.5rem', borderRadius: 'var(--radius-lg)', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', border: '1px solid rgba(255,255,255,0.5)' }}>
-          <div style={{ fontSize: '3rem', marginRight: '1.5rem' }}>🧠</div>
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        style={{ marginBottom: '2rem' }}
+      >
+        <Card style={{ background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(59, 130, 246, 0.1))', padding: '2.5rem', display: 'flex', alignItems: 'center', border: '1px solid rgba(139, 92, 246, 0.2)' }}>
+          <div style={{ 
+            width: '64px', height: '64px', borderRadius: '16px', 
+            background: 'rgba(139, 92, 246, 0.2)', color: 'var(--primary)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            marginRight: '1.5rem', flexShrink: 0
+          }}>
+            <Brain size={32} />
+          </div>
           <div>
-             <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '0.5rem' }}>Arquitectura Multi-Agente (Orquestador ↔ Especialista)</h3>
+             <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--foreground)' }}>Arquitectura Multi-Agente (Orquestador ↔ Especialista)</h3>
              <p style={{ color: 'var(--text-muted)', lineHeight: 1.6, margin: 0 }}>
                El Agente principal (Orquestador) puede delegar tareas complejas en estos Subagentes Expertos. Cada subagente funciona de forma aislada con su propio modelo, temperatura y herramientas (Function Calling), devolviendo el resultado limpio al Orquestador para no consumir todo el contexto.
              </p>
           </div>
-        </div>
-      </div>
+        </Card>
+      </motion.div>
 
-      <div className={styles.tableContainer} style={{ background: 'transparent', boxShadow: 'none', border: 'none', padding: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '1.5rem' }}>
         {loading ? (
-          <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-muted)' }}>Cargando arquitecturas...</div>
+          <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '4rem', color: 'var(--text-muted)' }}>Cargando arquitecturas...</div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '1.5rem' }}>
-            {subagents.map(sa => (
-              <div key={sa.id} className={styles.tableRow} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '2rem', background: 'var(--surface-light)', borderRadius: 'var(--radius-lg)', border: '1px solid rgba(255,255,255,0.5)', transition: 'all 0.3s ease', cursor: 'pointer', boxShadow: '0 10px 30px rgba(0,0,0,0.05)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', marginBottom: '1rem', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <div style={{ width: '40px', height: '40px', background: 'rgba(0,0,0,0.03)', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem' }}>
-                      {sa.name.includes('reservas') ? '📅' : sa.name.includes('facturacion') ? '💸' : '🛠️'}
+          subagents.map((sa, i) => (
+            <motion.div 
+              key={sa.id} 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.05 }}
+              style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
+            >
+              <Card hoverEffect style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', height: '100%', cursor: 'pointer', background: 'var(--surface-card)', border: '1px solid var(--border-subtle)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+                  <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                    <div style={{ 
+                      width: '48px', height: '48px', borderRadius: '12px', 
+                      background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(16, 185, 129, 0.2))', 
+                      border: '1px solid rgba(59, 130, 246, 0.3)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--secondary)'
+                    }}>
+                      {sa.name.includes('reservas') ? <Database size={20} /> : sa.name.includes('facturacion') ? <Zap size={20} /> : <Bot size={20} />}
                     </div>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 600 }}>{sa.name}</h3>
+                    <div>
+                      <h3 style={{ fontSize: '1.2rem', fontWeight: 600, margin: '0 0 0.2rem 0', color: 'var(--foreground)' }}>{sa.name}</h3>
+                    </div>
                   </div>
-                  <span className={`${styles.statusBadge} ${sa.is_active ? styles.active : styles.inactive}`}>
-                    {sa.is_active ? 'Activo' : 'Inactivo'}
+                  <span style={{ 
+                    padding: '4px 10px', 
+                    borderRadius: '12px', 
+                    fontSize: '0.75rem', 
+                    fontWeight: 600,
+                    background: sa.is_active ? 'rgba(16, 185, 129, 0.1)' : 'rgba(161, 161, 170, 0.1)',
+                    color: sa.is_active ? 'var(--success)' : 'var(--text-muted)',
+                    border: `1px solid ${sa.is_active ? 'rgba(16, 185, 129, 0.2)' : 'rgba(161, 161, 170, 0.2)'}`
+                  }}>
+                    {sa.is_active ? 'ACTIVO' : 'INACTIVO'}
                   </span>
                 </div>
                 
@@ -87,16 +156,16 @@ export default function SubAgentsPage() {
                   {sa.description}
                 </p>
 
-                <div style={{ marginTop: '1.5rem', width: '100%', paddingTop: '1rem', borderTop: '1px solid rgba(0,0,0,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  <div style={{ display: 'flex', gap: '0.8rem' }}>
-                    <span style={{ padding: '0.2rem 0.5rem', background: 'var(--surface-dark)', color: 'var(--text-on-dark)', borderRadius: '4px' }}>{sa.model}</span>
-                    <span style={{ padding: '0.2rem 0.5rem', background: 'rgba(0,0,0,0.05)', borderRadius: '4px' }}>T: {sa.temperature}</span>
+                <div style={{ marginTop: '1.5rem', width: '100%', paddingTop: '1.5rem', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <span style={{ padding: '0.2rem 0.6rem', background: 'rgba(255,255,255,0.05)', color: 'var(--foreground)', borderRadius: 'var(--radius-sm)' }}>{sa.model}</span>
+                    <span style={{ padding: '0.2rem 0.6rem', background: 'rgba(255,255,255,0.05)', borderRadius: 'var(--radius-sm)' }}>Temp: {sa.temperature}</span>
                   </div>
                   <span style={{ color: 'var(--primary)', fontWeight: 500 }}>Ajustar &rarr;</span>
                 </div>
-              </div>
-            ))}
-          </div>
+              </Card>
+            </motion.div>
+          ))
         )}
       </div>
     </div>

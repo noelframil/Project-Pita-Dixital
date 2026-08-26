@@ -41,9 +41,10 @@ export interface RegisteredTool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  kind: 'http' | 'native';
+  kind: 'http' | 'native' | 'custom_script';
   requiresApproval?: boolean;
   config?: HttpToolConfig;
+  script_code?: string;
 }
 
 export interface ToolResult {
@@ -161,10 +162,11 @@ export async function loadTools(clientId: string): Promise<RegisteredTool[]> {
     name: string;
     description: string;
     input_schema: Record<string, unknown>;
-    kind: 'http';
+    kind: 'http' | 'native' | 'custom_script';
     config: Buffer;
+    script_code?: string;
   }>(
-    `SELECT id, name, description, input_schema, kind, config, requires_approval
+    `SELECT id, name, description, input_schema, kind, config, requires_approval, script_code
        FROM tools
       WHERE client_id = $1 AND is_active
       ORDER BY name`,
@@ -178,7 +180,8 @@ export async function loadTools(clientId: string): Promise<RegisteredTool[]> {
     inputSchema: r.input_schema,
     kind: r.kind,
     requiresApproval: (r as any).requires_approval,
-    config: decryptJson<HttpToolConfig>(r.config),
+    config: r.config ? decryptJson<HttpToolConfig>(r.config) : undefined,
+    script_code: r.script_code,
   }));
 }
 
@@ -234,6 +237,7 @@ export function buildUrl(template: string, input: Record<string, unknown>): stri
  * de terceros dio un 500 sería peor servicio.
  */
 import { executeNativeTool } from '../tools/index.js';
+import { runCodeInterpreter } from '../tools/interpreter.js';
 
 export async function executeTool(
   tool: RegisteredTool,
@@ -257,6 +261,47 @@ export async function executeTool(
   if (tool.kind === 'native') {
     const nativeResult = await executeNativeTool(tool, input, ctx);
     return { content: nativeResult.content, isError: false, latencyMs: Date.now() - started };
+  }
+
+  if (tool.kind === 'custom_script') {
+    try {
+      const injection = `const input = ${JSON.stringify(input)};\n${tool.script_code}`;
+      const output = await runCodeInterpreter({ code: injection });
+      return { content: output, isError: false, latencyMs: Date.now() - started };
+    } catch (e: any) {
+      // Auto-reparación en Tiempo Real (Hot-Reload Metaprogramming)
+      console.log(`[Auto-Repair] Herramienta ${tool.name} falló. Intentando auto-reparar en caliente...`);
+      try {
+        const { complete } = await import('../llm/index.js');
+        const fixPrompt = `La herramienta ${tool.name} falló con este error: ${e.message}\nCódigo actual:\n${tool.script_code}\nPor favor, reescribe el código JavaScript para solucionar este error. Devuelve ÚNICAMENTE el código corregido sin markdown ni explicaciones.`;
+        
+        const fixResult = await complete('openai', {
+          model: 'gpt-4o-mini',
+          system: 'Eres un programador experto. Devuelve únicamente el código puro, sin backticks de markdown (```), sin explicaciones.',
+          messages: [{ role: 'user', content: fixPrompt }],
+          temperature: 0,
+          maxTokens: 1000,
+        });
+
+        let newCode = fixResult.text.trim();
+        if (newCode.startsWith('```')) {
+          newCode = newCode.replace(/^```[a-z]*\n/, '').replace(/\n```$/, '');
+        }
+
+        await query('UPDATE tools SET script_code = $1 WHERE id = $2', [newCode, tool.id]);
+        console.log(`[Auto-Repair] Código reparado y parcheado. Reintentando...`);
+        
+        const retryInjection = `const input = ${JSON.stringify(input)};\n${newCode}`;
+        const retryOutput = await runCodeInterpreter({ code: retryInjection });
+        return { 
+          content: `[Auto-Reparación Exitosa] El código falló pero me he auto-parcheado en tiempo real.\n\nResultado:\n${retryOutput}`,
+          isError: false, 
+          latencyMs: Date.now() - started 
+        };
+      } catch (retryError: any) {
+        return { content: `Script error (y la auto-reparación también falló): ${e.message} / ${retryError.message}`, isError: true, latencyMs: Date.now() - started };
+      }
+    }
   }
 
   try {

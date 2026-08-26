@@ -40,6 +40,7 @@ import { complete, type ChatMessage, type ToolCall, type ToolSpec } from '../llm
 import { executeTool, recordInvocation, type RegisteredTool } from './tools.js';
 import { newRunId, trace, type AgentRole } from './telemetry.js';
 import { buildRejectionMessage, critique, type ReflectionAttempt } from './reflection.js';
+import { redactPII, unredactPII } from './dlp.js';
 
 /**
  * Directrices ReAct que se anexan al prompt del sistema cuando el cliente tiene
@@ -75,6 +76,7 @@ export interface BuiltinContext {
   clientId: string;
   sessionId?: string;
   channel?: string;
+  pushUI?: (component: any) => void;
 }
 
 /**
@@ -129,6 +131,8 @@ export interface AgentRunResult {
   interruptedBy: { toolName: string; input: Record<string, unknown> } | null;
   /** Rondas de autocrítica, si estaba activa. */
   reflections: ReflectionAttempt[];
+  /** Componentes UI generados durante este turno. */
+  uiComponents?: any[];
 }
 
 /** Configuración de la autocrítica. Ausente = apagada. */
@@ -207,14 +211,14 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
   ];
 
   if (toolSpecs.length > 0) {
-    toolSpecs[toolSpecs.length - 1].cacheable = true;
+    toolSpecs[toolSpecs.length - 1]!.cacheable = true;
   }
 
   const messages: ChatMessage[] = [...opts.messages];
   // Cache the last user message of the initial history
   const lastUserIdx = messages.findLastIndex((m) => m.role === 'user');
   if (lastUserIdx >= 0) {
-    messages[lastUserIdx] = { ...messages[lastUserIdx], cacheable: true };
+    messages[lastUserIdx] = { ...messages[lastUserIdx]!, cacheable: true };
   }
   const transcript: ChatMessage[] = [];
   const steps: AgentStep[] = [];
@@ -228,6 +232,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
   let model = opts.model;
   let stopReason: AgentStopReason = 'final_answer';
   let interruptedBy: AgentRunResult['interruptedBy'] = null;
+  const uiComponents: any[] = [];
 
   // El +1 es la vuelta final, la que ya contesta sin pedir nada.
   const maxRounds = Math.max(1, opts.maxIterations) + 1;
@@ -242,13 +247,21 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
     const offerTools = toolSpecs.length > 0 && !isLastRound;
     const roundStarted = Date.now();
 
+    // Redactamos los mensajes antes de enviarlos al LLM
+    const redactedMessages = messages.map(m => ({
+      ...m,
+      content: typeof m.content === 'string' 
+        ? redactPII(m.content) 
+        : m.content
+    }));
+
     let result;
     try {
       result = await complete(opts.provider, {
         model: opts.model,
         system: opts.system,
         systemCacheable: true,
-        messages,
+        messages: redactedMessages,
         temperature: opts.temperature,
         maxTokens: opts.maxTokens,
         signal: AbortSignal.timeout(config.LLM_TIMEOUT_MS),
@@ -272,31 +285,39 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
 
     const roundLatency = Date.now() - roundStarted;
 
+    // Restauramos el PII en el texto del modelo y en los parámetros de las herramientas
+    const unredactedText = unredactPII(result.text);
+    const unredactedToolCalls = result.toolCalls.map(tc => {
+      const inputStr = JSON.stringify(tc.input);
+      const unredactedStr = unredactPII(inputStr);
+      return { ...tc, input: JSON.parse(unredactedStr) };
+    });
+
     promptTokens += result.promptTokens;
     completionTokens += result.completionTokens;
     costMicros += result.costMicros;
-    text = result.text;
+    text = unredactedText;
     model = result.model;
 
     track({
       iteration,
       stepType: 'thought',
       payload: {
-        text: result.text,
+        text: unredactedText,
         model: result.model,
         finish_reason: result.finishReason,
         tools_offered: offerTools ? toolSpecs.map((t) => t.name) : [],
-        tool_calls_requested: result.toolCalls.map((c) => c.name),
+        tool_calls_requested: unredactedToolCalls.map((c) => c.name),
       },
       latencyMs: roundLatency,
       tokensUsed: result.promptTokens + result.completionTokens,
     });
 
     // ── Respuesta final: aquí entra la autocrítica ──────────────
-    if (result.toolCalls.length === 0) {
+    if (unredactedToolCalls.length === 0) {
       steps.push({
         iteration,
-        thought: result.text,
+        thought: unredactedText,
         toolCalls: [],
         results: [],
         usage: {
@@ -306,11 +327,11 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
         },
       });
 
-      if (opts.reflection && result.text.trim()) {
+      if (opts.reflection && unredactedText.trim()) {
         const refined = await refine({
           opts,
           reflection: opts.reflection,
-          draft: result.text,
+          draft: unredactedText,
           messages,
           runId,
           agentRole,
@@ -332,14 +353,14 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
 
     const assistantTurn: ChatMessage = {
       role: 'assistant',
-      content: result.text,
-      toolCalls: result.toolCalls,
+      content: unredactedText,
+      toolCalls: unredactedToolCalls,
     };
     messages.push(assistantTurn);
     transcript.push(assistantTurn);
 
     // ── Herramienta sin ejecutor: corta el bucle ────────────────
-    const interrupting = result.toolCalls.find((c) => {
+    const interrupting = unredactedToolCalls.find((c) => {
       const builtin = builtins.get(c.name);
       return builtin !== undefined && builtin.handler === undefined;
     });
@@ -348,8 +369,8 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
       interruptedBy = { toolName: interrupting.name, input: interrupting.input };
       steps.push({
         iteration,
-        thought: result.text,
-        toolCalls: result.toolCalls,
+        thought: unredactedText,
+        toolCalls: unredactedToolCalls,
         results: [],
         usage: {
           promptTokens: result.promptTokens,
@@ -371,7 +392,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
     // Cada llamada solicitada, antes de ejecutarla. Se registra aquí y no
     // después para que quede constancia aunque la ejecución se cuelgue o el
     // proceso muera a mitad.
-    for (const call of result.toolCalls) {
+    for (const call of unredactedToolCalls) {
       track({
         iteration,
         stepType: 'tool_call',
@@ -384,7 +405,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
     // El modelo puede pedir varias a la vez; encadenarlas sumaría latencias sin
     // motivo. Todos los resultados vuelven juntos en la siguiente vuelta.
     const executed = await Promise.all(
-      result.toolCalls.map((call) => {
+      unredactedToolCalls.map((call) => {
         const ctx: BuiltinContext = {
           conversationId: opts.conversationId,
           runId,
@@ -392,6 +413,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
           clientId: opts.clientId,
           sessionId: opts.sessionId,
           channel: opts.channel,
+          pushUI: (comp: any) => uiComponents.push(comp),
         };
         return runOne(call, byName, builtins, seen, ctx);
       }),
@@ -421,8 +443,8 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
 
     steps.push({
       iteration,
-      thought: result.text,
-      toolCalls: result.toolCalls,
+      thought: unredactedText,
+      toolCalls: unredactedToolCalls,
       results: stepResults,
       usage: {
         promptTokens: result.promptTokens,
@@ -460,6 +482,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
     costMicros,
     interruptedBy,
     reflections,
+    uiComponents,
   };
 }
 

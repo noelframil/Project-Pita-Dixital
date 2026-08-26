@@ -123,6 +123,37 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
+  app.get('/api/v1/admin/tools/synthesized', async (req, reply) => {
+    try {
+      const rows = await query<{
+        id: string;
+        name: string;
+        description: string;
+        is_active: boolean;
+        script_code: string;
+        input_schema: any;
+      }>(
+        `SELECT id, name, description, is_active, script_code, input_schema
+           FROM tools
+          WHERE kind = 'custom_script'
+          ORDER BY created_at DESC`
+      );
+      return { tools: rows };
+    } catch (err) {
+      app.log.warn('Returning mock synthesized tools due to DB error: ' + String(err));
+      return { tools: [
+        { 
+          id: 't-synth-1', 
+          name: 'analyze_pdf_sentiment', 
+          description: 'Reads a PDF text and analyzes the sentiment.', 
+          is_active: true, 
+          script_code: 'console.log("Analyze sentiment of: " + input.text); return { sentiment: "positive" };',
+          input_schema: { type: 'object', properties: { text: { type: 'string' } } }
+        }
+      ]};
+    }
+  });
+
   app.get('/api/v1/admin/tools', async (req, reply) => {
     try {
       const rows = await query<{
@@ -264,6 +295,18 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return { success: true };
   });
 
+  app.post<{ Body: { clientId: string, channel: string, channelUserId: string } }>('/api/v1/admin/gdpr/suppress', async (req, reply) => {
+    const { clientId, channel, channelUserId } = req.body;
+    try {
+      const { executeGdprSuppression } = await import('../core/gdpr.js');
+      const result = await executeGdprSuppression(clientId, channel, channelUserId);
+      return { success: true, deleted: result.deleted };
+    } catch (err: any) {
+      app.log.error(err);
+      return reply.status(500).send({ error: 'GDPR suppression failed: ' + err.message });
+    }
+  });
+
   app.get('/api/v1/admin/subagents', async (req, reply) => {
     try {
       const rows = await query<{
@@ -320,6 +363,25 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     } catch (err) {
       app.log.error(err);
       return reply.status(500).send({ error: 'DB Error' });
+    }
+  });
+
+  app.get('/api/v1/admin/learned-rules', async (req, reply) => {
+    const clientId = 'mock-client-id';
+    try {
+      const row = await queryOne<any>(
+        `SELECT system_prompt_template FROM bot_configs WHERE client_id = $1`,
+        [clientId]
+      );
+      if (!row) return { rules: [] };
+      const rules = row.system_prompt_template
+        .split('\n')
+        .filter((l: string) => l.includes('[REGLA APRENDIDA AUTOMÁTICAMENTE]'))
+        .map((l: string) => l.replace('[REGLA APRENDIDA AUTOMÁTICAMENTE]:', '').trim());
+      return { rules };
+    } catch (err) {
+      app.log.warn('Returning mock rules due to DB error: ' + String(err));
+      return { rules: ['Nunca pidas el email dos veces si ya está en memoria.', 'Si el cliente pregunta por la piscina, menciona el horario de verano.'] };
     }
   });
 
@@ -446,7 +508,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         mediaCostMicros: mediaCostMicros,
       });
 
-      return { success: true, reply: result.reply, tools: result.toolsUsed, iterations: result.steps.length };
+      return { success: true, reply: result.reply, tools: result.toolsUsed, iterations: result.steps.length, uiComponents: result.uiComponents, steps: result.steps };
     } catch (err: any) {
       app.log.warn('Fallback a respuesta mockeada debido a error: ' + String(err));
       // Mock response para la demo local sin DB

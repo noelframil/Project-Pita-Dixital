@@ -17,6 +17,7 @@ import { closeRedis } from './queue/connection.js';
 import { closeProactiveQueue } from './queue/proactive.js';
 import { startProactiveWorker } from './queue/worker.js';
 import { startCronWorker } from './queue/cronWorker.js';
+import { ProactiveMonitor } from './workers/proactive-monitor.js';
 
 const app = Fastify({
   logger: {
@@ -89,7 +90,12 @@ const stopHandoffWorker = startHandoffWorker(app.log);
 const stopProactiveWorker = startProactiveWorker(app.log);
 const stopCronWorker = startCronWorker(app.log);
 
+// Arrancar nuestro motor de inferencia predictiva
+const predictiveMonitor = new ProactiveMonitor();
+predictiveMonitor.start();
+
 const shutdown = async (signal: string) => {
+  predictiveMonitor.stop();
   app.log.info(`${signal} recibido, cerrando`);
   stopTelegram();
   stopHandoffWorker();

@@ -6,6 +6,7 @@ import { runCodeInterpreter } from './interpreter.js';
 import { runBrowserAutomation } from './browser.js';
 import { saveToMemory } from './memory.js';
 import { scheduleCron } from './cron.js';
+import { makePhoneCall } from './twilio.js';
 import type { RegisteredTool, ToolResult } from '../core/tools.js';
 
 export async function executeNativeTool(
@@ -42,6 +43,8 @@ export async function executeNativeTool(
       content = await scheduleCron(ctx.clientId, input);
     } else if (tool.name === 'stripe_payment_link') {
       content = await createStripePaymentLink(input);
+    } else if (tool.name === 'make_phone_call') {
+      content = await makePhoneCall(input);
     } else {
       throw new Error(`Unknown native tool: ${tool.name}`);
     }

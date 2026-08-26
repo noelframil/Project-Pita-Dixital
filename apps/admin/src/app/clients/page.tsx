@@ -130,7 +130,7 @@ export default function ClientsPage() {
                   transition={{ delay: i * 0.05 }}
                   style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
                 >
-                  <Card hoverEffect style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', height: '100%', cursor: 'pointer' }}>
+                  <Card hoverEffect style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', height: '100%', cursor: 'pointer', background: 'var(--surface-card)', border: '1px solid var(--border-subtle)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
                       <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
                         <div style={{ 
@@ -161,7 +161,7 @@ export default function ClientsPage() {
                       </span>
                     </div>
                     
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: 'auto', paddingTop: '1.5rem', borderTop: '1px solid var(--glass-border)' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: 'auto', paddingTop: '1.5rem', borderTop: '1px solid var(--border-subtle)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                         <Database size={16} color="var(--accent)" />
                         {client.entries} docs RAG

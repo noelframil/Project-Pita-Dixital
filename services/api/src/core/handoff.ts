@@ -147,6 +147,11 @@ export async function escalateToHuman(req: HandoffRequest): Promise<void> {
       [req.conversationId, req.clientId, JSON.stringify(payload)],
     );
   });
+
+  // Lóbulo Frontal: Aprender del Handoff en background (no bloqueante)
+  import('./learner.js').then((m) => {
+    m.learnFromConversation(req.conversationId, req.clientId).catch(console.error);
+  }).catch(console.error);
 }
 
 /**

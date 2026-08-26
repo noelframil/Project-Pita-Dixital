@@ -1,39 +1,42 @@
 :root {
-  /* Premium Dark Theme */
-  --background: #09090b;
-  --background-abstract: radial-gradient(circle at 15% 50%, rgba(20, 20, 25, 1) 0%, #09090b 100%);
-  --glass-bg: rgba(20, 20, 25, 0.6);
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --glass-highlight: rgba(255, 255, 255, 0.04);
-  --foreground: #fafafa;
-  --text-muted: #a1a1aa;
+  /* Moonshot Theme (Linear/Vercel) */
+  --background: #000000;
+  --background-abstract: #000000;
+  --glass-bg: transparent;
+  --glass-border: rgba(255, 255, 255, 0.06);
+  --glass-highlight: transparent;
+  --foreground: #ededed;
+  --text-muted: #888888;
   
   /* Cards & Surfaces */
-  --surface-light: rgba(30, 30, 35, 0.7);
-  --surface-dark: rgba(15, 15, 20, 0.8);
+  --surface-light: #111111;
+  --surface-dark: #0a0a0a;
+  --surface-card: #0a0a0a;
   --text-on-dark: #ffffff;
-  --text-muted-on-dark: #a1a1aa;
+  --text-muted-on-dark: #888888;
+  --border-subtle: rgba(255, 255, 255, 0.04);
+  --border-glow: transparent;
 
-  /* Accents - Premium Violet/Blue */
-  --primary: #8b5cf6;
-  --primary-hover: #7c3aed;
-  --secondary: #3b82f6;
-  --accent: #f43f5e;
-  --success: #10b981;
-  --warning: #f59e0b;
+  /* Accents */
+  --primary: #ffffff;
+  --primary-hover: #e0e0e0;
+  --secondary: #888888;
+  --accent: #ff453a;
+  --success: #32d74b;
+  --warning: #ffd60a;
   
-  /* Radii */
-  --radius-sm: 8px;
-  --radius-md: 16px;
-  --radius-lg: 24px;
-  --radius-xl: 32px;
+  /* Radii (More subtle, tech-focused) */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
   --radius-pill: 9999px;
   
-  /* Effects */
-  --shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
-  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.4);
-  --shadow-glow: 0 0 20px rgba(139, 92, 246, 0.4);
-  --blur-glass: blur(30px);
+  /* Effects (No heavy shadows/glows) */
+  --shadow-glass: 0 2px 8px rgba(0, 0, 0, 0.5);
+  --shadow-card: 0 1px 4px rgba(0, 0, 0, 0.5);
+  --shadow-glow: none;
+  --blur-glass: blur(10px);
   
   --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
@@ -59,7 +62,7 @@ body {
   overflow-x: hidden;
   background: var(--background-abstract);
   color: var(--foreground);
-  font-family: var(--font-inter), sans-serif;
+  font-family: var(--font-outfit), sans-serif;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
@@ -69,6 +72,9 @@ body {
   color: var(--foreground);
   min-height: 100vh;
   overflow: hidden;
+  /* Dot pattern background */
+  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 16px 16px;
 }
 
 .app-wrapper {
@@ -77,76 +83,17 @@ body {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  padding: 1rem;
+  padding: 0;
   z-index: 1;
-}
-
-/* Premium Background Orbs */
-.bg-orb {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(120px);
-  z-index: -1;
-  opacity: 0.5;
-  animation: orbFloat 20s infinite alternate ease-in-out;
-}
-
-.orb-1 {
-  top: -10%;
-  left: -10%;
-  width: 600px;
-  height: 600px;
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.6) 0%, rgba(139, 92, 246, 0) 70%); /* Violet */
-}
-
-.orb-2 {
-  bottom: -20%;
-  right: -10%;
-  width: 800px;
-  height: 800px;
-  background: radial-gradient(circle, rgba(59, 130, 246, 0.5) 0%, rgba(59, 130, 246, 0) 70%); /* Blue */
-  animation-delay: -5s;
-}
-
-.orb-3 {
-  top: 40%;
-  right: 20%;
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(circle, rgba(244, 63, 94, 0.4) 0%, rgba(244, 63, 94, 0) 70%); /* Rose */
-  animation-delay: -10s;
-}
-
-@keyframes orbFloat {
-  0% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(8%, 8%) scale(1.15); }
-  100% { transform: translate(-8%, -8%) scale(0.9); }
 }
 
 .glass-container {
   width: 100%;
-  max-width: 1600px;
-  height: calc(100vh - 2rem);
-  background: var(--glass-bg);
-  backdrop-filter: var(--blur-glass);
-  -webkit-backdrop-filter: var(--blur-glass);
-  border: 1px solid var(--glass-border);
-  border-top: 1px solid rgba(255, 255, 255, 0.15);
-  border-left: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-glass);
+  height: 100vh;
+  background: transparent;
   display: flex;
   overflow: hidden;
   position: relative;
-}
-
-.glass-container::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  border-radius: var(--radius-xl);
-  pointer-events: none;
-  box-shadow: inset 0 0 0 1px var(--glass-highlight);
 }
 
 /* Common utility classes */
@@ -165,3 +112,80 @@ button {
 ul {
   list-style: none;
 }
+
+/* Custom Scrollbar for Glass UI */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-pill);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Premium Shimmer Effect */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite linear;
+}
+
+/* Interactive Glow - Removed in Moonshot */
+.btn-glow {
+  position: relative;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+.btn-glow:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  color: #fff !important;
+}
+
+/* Pulse Animation Utils */
+@keyframes pulse-ring {
+  0% { transform: scale(0.8); opacity: 0.5; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+
+@keyframes pulse-dot {
+  0% { transform: scale(0.8); }
+  50% { transform: scale(1); }
+  100% { transform: scale(0.8); }
+}
+
+.status-pulse {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.status-pulse::before {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background-color: inherit;
+  border-radius: 50%;
+  z-index: 0;
+  animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+.status-pulse > span {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background-color: inherit;
+  animation: pulse-dot 2s cubic-bezier(0.455, 0.03, 0.515, 0.955) -.4s infinite;
+}
+

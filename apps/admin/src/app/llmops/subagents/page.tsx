@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Bot, Zap, Plus, Settings2, Trash2, ShieldAlert } from 'lucide-react';
-import { Card } from '../../../../components/ui/Card';
+import { Card } from '../../../components/ui/Card';
 import CreateSubAgentModal from './CreateSubAgentModal';
 
 type SubAgent = {

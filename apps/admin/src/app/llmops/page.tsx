@@ -120,8 +120,8 @@ export default function LLMOpsPage() {
           initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
           onClick={() => setActiveTab('cost')}
           style={{ 
-            background: activeTab === 'cost' ? 'rgba(236, 72, 153, 0.15)' : 'var(--surface-dark)', 
-            border: `1px solid ${activeTab === 'cost' ? 'rgba(236, 72, 153, 0.4)' : 'var(--glass-border)'}`, 
+            background: activeTab === 'cost' ? 'rgba(236, 72, 153, 0.15)' : 'var(--surface-card)', 
+            border: `1px solid ${activeTab === 'cost' ? 'rgba(236, 72, 153, 0.4)' : 'var(--border-subtle)'}`, 
             padding: '2rem', borderRadius: 'var(--radius-lg)', cursor: 'pointer', transition: 'all 0.2s'
           }}
         >
@@ -139,8 +139,8 @@ export default function LLMOpsPage() {
           initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
           onClick={() => setActiveTab('tokens')}
           style={{ 
-            background: activeTab === 'tokens' ? 'rgba(59, 130, 246, 0.15)' : 'var(--surface-dark)', 
-            border: `1px solid ${activeTab === 'tokens' ? 'rgba(59, 130, 246, 0.4)' : 'var(--glass-border)'}`, 
+            background: activeTab === 'tokens' ? 'rgba(59, 130, 246, 0.15)' : 'var(--surface-card)', 
+            border: `1px solid ${activeTab === 'tokens' ? 'rgba(59, 130, 246, 0.4)' : 'var(--border-subtle)'}`, 
             padding: '2rem', borderRadius: 'var(--radius-lg)', cursor: 'pointer', transition: 'all 0.2s'
           }}
         >
@@ -158,8 +158,8 @@ export default function LLMOpsPage() {
           initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
           onClick={() => setActiveTab('latency')}
           style={{ 
-            background: activeTab === 'latency' ? 'rgba(16, 185, 129, 0.15)' : 'var(--surface-dark)', 
-            border: `1px solid ${activeTab === 'latency' ? 'rgba(16, 185, 129, 0.4)' : 'var(--glass-border)'}`, 
+            background: activeTab === 'latency' ? 'rgba(16, 185, 129, 0.15)' : 'var(--surface-card)', 
+            border: `1px solid ${activeTab === 'latency' ? 'rgba(16, 185, 129, 0.4)' : 'var(--border-subtle)'}`, 
             padding: '2rem', borderRadius: 'var(--radius-lg)', cursor: 'pointer', transition: 'all 0.2s'
           }}
         >
@@ -176,7 +176,7 @@ export default function LLMOpsPage() {
       {/* Gráfica principal */}
       <motion.div 
         initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 }}
-        style={{ background: 'var(--surface-dark)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-xl)', padding: '2rem', marginBottom: '3rem' }}
+        style={{ background: 'var(--surface-card)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-xl)', padding: '2rem', marginBottom: '3rem', boxShadow: 'var(--shadow-card)' }}
       >
         <h2 style={{ margin: '0 0 2rem 0', fontSize: '1.25rem', fontWeight: 600 }}>
           Evolución de 7 días: {activeTab === 'cost' ? 'Costes ($)' : activeTab === 'tokens' ? 'Uso de Tokens' : 'Latencia (ms)'}
@@ -252,7 +252,7 @@ export default function LLMOpsPage() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
             {traces.map(trace => (
-              <div key={trace.id} onClick={() => setSelectedTraceId(trace.id)} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr 1fr', alignItems: 'center', padding: '1.2rem 2rem', background: 'var(--surface-dark)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--glass-border)', transition: 'all 0.2s ease', cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)'} onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--glass-border)'}>
+              <div key={trace.id} onClick={() => setSelectedTraceId(trace.id)} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr 1fr', alignItems: 'center', padding: '1.2rem 2rem', background: 'var(--surface-card)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)', transition: 'all 0.2s ease', cursor: 'pointer', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }} onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)'} onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-subtle)'}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                   <div style={{ width: '36px', height: '36px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}>
                     <Bot size={18} />

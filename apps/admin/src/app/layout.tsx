@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Outfit } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-inter",
+const outfit = Outfit({
+  variable: "--font-outfit",
   subsets: ["latin"],
 });
 
@@ -21,19 +21,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es" className={inter.variable}>
+    <html lang="es" className={outfit.variable}>
       <body>
         <div className="app-wrapper">
-          {/* Gradients for Premium Glassmorphism */}
-          <div className="bg-orb orb-1"></div>
-          <div className="bg-orb orb-2"></div>
-          <div className="bg-orb orb-3"></div>
-          
           <div className="glass-container">
             <Sidebar />
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               <Header />
-              <main style={{ flex: 1, overflowY: 'auto', padding: '0 2.5rem 2.5rem' }}>
+              <main style={{ flex: 1, overflowY: 'auto', padding: '0 2rem 2rem' }}>
                 {children}
               </main>
             </div>

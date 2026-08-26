@@ -36,39 +36,39 @@ export default function Sidebar() {
   
   return (
     <aside style={{
-      width: '280px',
-      background: 'rgba(10, 10, 15, 0.4)',
+      width: '240px',
+      background: 'transparent',
       borderRight: '1px solid var(--glass-border)',
       display: 'flex',
       flexDirection: 'column',
-      padding: '2rem 1rem',
+      padding: '1.5rem 1rem',
       position: 'relative',
       zIndex: 'var(--z-base)',
     }}>
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        gap: '0.75rem',
-        padding: '0 1rem',
-        marginBottom: '2.5rem',
-        fontSize: '1.2rem',
-        fontWeight: 700,
-        color: 'var(--foreground)'
+        gap: '0.5rem',
+        padding: '0 0.5rem',
+        marginBottom: '2rem',
+        fontSize: '0.9rem',
+        fontWeight: 600,
+        color: 'var(--foreground)',
+        letterSpacing: '-0.02em'
       }}>
         <motion.div 
           whileHover={{ rotate: 180 }}
           transition={{ duration: 0.3 }}
           style={{
-            background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
-            borderRadius: '12px',
-            padding: '8px',
+            background: '#ffffff',
+            borderRadius: '6px',
+            padding: '4px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: '0 0 20px rgba(139,92,246,0.4)'
           }}
         >
-          <Bot size={20} color="white" />
+          <Bot size={14} color="#000" />
         </motion.div>
         <span>Pita Dixital</span>
       </div>
@@ -82,22 +82,22 @@ export default function Sidebar() {
               <li key={item.path}>
                 <Link href={item.path}>
                   <motion.div
-                    whileHover={{ x: 4, backgroundColor: 'rgba(255,255,255,0.05)' }}
-                    whileTap={{ scale: 0.98 }}
+                    whileHover={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
+                    whileTap={{ scale: 0.99 }}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '0.75rem',
-                      padding: '0.75rem 1rem',
-                      borderRadius: 'var(--radius-md)',
+                      gap: '0.5rem',
+                      padding: '0.4rem 0.5rem',
+                      borderRadius: 'var(--radius-sm)',
                       color: isActive ? 'var(--foreground)' : 'var(--text-muted)',
-                      background: isActive ? 'linear-gradient(90deg, rgba(139,92,246,0.15), transparent)' : 'transparent',
-                      borderLeft: isActive ? '3px solid var(--primary)' : '3px solid transparent',
-                      fontWeight: isActive ? 600 : 500,
-                      transition: 'color 0.2s ease'
+                      background: isActive ? 'rgba(255,255,255,0.06)' : 'transparent',
+                      fontWeight: isActive ? 500 : 400,
+                      fontSize: '0.85rem',
+                      transition: 'all 0.15s ease'
                     }}
                   >
-                    <Icon size={18} color={isActive ? 'var(--primary)' : 'currentColor'} />
+                    <Icon size={14} color={isActive ? 'var(--foreground)' : 'currentColor'} />
                     {item.name}
                   </motion.div>
                 </Link>
@@ -112,18 +112,19 @@ export default function Sidebar() {
           <li>
             <Link href="/settings">
               <motion.div
-                whileHover={{ x: 4, backgroundColor: 'rgba(255,255,255,0.05)' }}
+                whileHover={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.75rem',
-                  padding: '0.75rem 1rem',
-                  borderRadius: 'var(--radius-md)',
+                  gap: '0.5rem',
+                  padding: '0.4rem 0.5rem',
+                  borderRadius: 'var(--radius-sm)',
                   color: 'var(--text-muted)',
-                  fontWeight: 500
+                  fontWeight: 400,
+                  fontSize: '0.85rem',
                 }}
               >
-                <Settings size={18} />
+                <Settings size={14} />
                 Settings
               </motion.div>
             </Link>
