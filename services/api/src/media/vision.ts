@@ -9,6 +9,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../config.js';
 import { estimateCostMicros } from '../llm/pricing.js';
 import { IMAGE_MIMES, MediaError, sniffMedia, type MediaExtraction, type MediaInput } from './types.js';
+import Tesseract from 'tesseract.js';
 
 /**
  * Qué se le pide al modelo de visión.
@@ -85,13 +86,29 @@ export async function describeImage(input: MediaInput): Promise<MediaExtraction>
     );
   }
 
-  // Mock metadata extraction logic for Phase 1-4 (JSON Structured Data)
+  // Deep Dive Phase 1: Real Local OCR with Tesseract.js para extraer metadatos del pasaporte/factura
   let metadata: Record<string, any> | undefined = undefined;
-  const promptLower = prompt.toLowerCase();
-  if (promptLower.includes('factura') || input.filename?.toLowerCase().includes('factura')) {
-    metadata = { type: 'invoice', iban: 'ES91 2100 0418 40 1234567891', total: 450.25 };
-  } else if (promptLower.includes('pasaporte') || input.filename?.toLowerCase().includes('passport')) {
-    metadata = { type: 'id', mrz: 'P<ESPDOE<<JOHN<<<<<<<<<<<<<<<<<<<<<<', name: 'John Doe' };
+  try {
+    console.log('[Vision] Ejecutando OCR local con Tesseract.js...');
+    const ocrResult = await Tesseract.recognize(input.buffer, 'spa+eng');
+    const textUpper = ocrResult.data.text.toUpperCase();
+    
+    if (textUpper.includes('PASAPORTE') || textUpper.includes('PASSPORT') || textUpper.includes('P<')) {
+      metadata = { 
+        type: 'id', 
+        raw_ocr: ocrResult.data.text, 
+        confidence: ocrResult.data.confidence, 
+        detected_name: ocrResult.data.text.split('\n').find(l => l.length > 3) || 'Unknown'
+      };
+    } else if (textUpper.includes('FACTURA') || textUpper.includes('INVOICE') || textUpper.includes('TOTAL')) {
+      metadata = { 
+        type: 'invoice', 
+        raw_ocr: ocrResult.data.text, 
+        confidence: ocrResult.data.confidence 
+      };
+    }
+  } catch (err) {
+    console.error('[Vision] Tesseract OCR falló:', err);
   }
 
   return { ...extraction, kind: 'image', latencyMs: Date.now() - started, base64, mime: sniffed.mime, metadata };

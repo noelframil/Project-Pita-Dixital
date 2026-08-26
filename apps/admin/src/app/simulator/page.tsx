@@ -145,10 +145,10 @@ export default function SimulatorPage() {
                       <div style={{ width: `${progress}%`, height: '100%', background: 'var(--danger)', transition: 'width 0.2s' }}></div>
                    </div>
                    <div style={{ marginTop: '2rem', fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                     <div>> Instanciando Gemelo Digital... OK</div>
-                     <div>> Inyectando datos meteorológicos... OK</div>
-                     <div>> Resolviendo ecuación de elasticidad de demanda...</div>
-                     {progress > 50 && <div>> Analizando {Math.floor(progress * 150)} universos paralelos...</div>}
+                     <div>&gt; Instanciando Gemelo Digital... OK</div>
+                     <div>&gt; Inyectando datos meteorológicos... OK</div>
+                     <div>&gt; Resolviendo ecuación de elasticidad de demanda...</div>
+                     {progress > 50 && <div>&gt; Analizando {Math.floor(progress * 150)} universos paralelos...</div>}
                    </div>
                  </div>
                </div>

@@ -1,4 +1,7 @@
 import type { Tool } from '../core/tools.js';
+import jwt from 'jsonwebtoken';
+
+const IOT_BLE_SECRET = process.env.IOT_BLE_SECRET || 'pita-dixital-ble-secret-key-992';
 
 export const processPassportCheckin: Tool = {
   name: 'process_passport_checkin',
@@ -45,10 +48,20 @@ export const issueDigitalKey: Tool = {
     required: ['roomNumber', 'guestId'],
   },
   execute: async (args: { roomNumber: string, guestId: string }) => {
-    // Mock logic for BLE key issuance
+    // Lógica real de generación de token criptográfico para BLE
+    const token = jwt.sign({
+      room: args.roomNumber,
+      guest: args.guestId,
+      access: 'full',
+      type: 'digital_key_ble'
+    }, IOT_BLE_SECRET, { expiresIn: '72h' });
+
     return JSON.stringify({
       status: 'success',
-      message: `Llave digital BLE para la habitación ${args.roomNumber} generada y enviada al dispositivo móvil del huésped ${args.guestId}.`
+      message: `Llave digital BLE real generada para la habitación ${args.roomNumber}. Enviada al huésped ${args.guestId}.`,
+      ble_token: token,
+      expires_in: '72h',
+      crypto: 'HS256'
     });
   },
 };
