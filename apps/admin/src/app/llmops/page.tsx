@@ -63,8 +63,14 @@ export default function LLMOpsPage() {
   };
 
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem' }}>
-      <header style={{ marginBottom: '3rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem', position: 'relative' }}>
+      {/* Ambient background glow */}
+      <div style={{ 
+        position: 'absolute', top: '10%', left: '50%', transform: 'translate(-50%, 0)', width: '600px', height: '600px', 
+        background: 'radial-gradient(circle, rgba(236,72,153,0.08) 0%, rgba(59,130,246,0.08) 50%, rgba(0,0,0,0) 80%)', 
+        filter: 'blur(60px)', zIndex: 0, pointerEvents: 'none' 
+      }} />
+      <header style={{ position: 'relative', zIndex: 1, marginBottom: '3rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <Link href="/"
             style={{
@@ -108,7 +114,7 @@ export default function LLMOpsPage() {
         </div>
       </header>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.5rem', marginBottom: '2rem' }}>
+      <div style={{ position: 'relative', zIndex: 1, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.5rem', marginBottom: '2rem' }}>
         {/* Metrica: Coste */}
         <motion.div 
           initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
@@ -238,9 +244,9 @@ export default function LLMOpsPage() {
         </div>
       </motion.div>
 
-      <h2 style={{ fontSize: '1.25rem', marginBottom: '1rem', fontWeight: 600 }}>Trazas Recientes (Traces)</h2>
+      <h2 style={{ position: 'relative', zIndex: 1, fontSize: '1.25rem', marginBottom: '1rem', fontWeight: 600 }}>Trazas Recientes (Traces)</h2>
       
-      <div style={{ background: 'transparent' }}>
+      <div style={{ position: 'relative', zIndex: 1, background: 'transparent' }}>
         {loading ? (
           <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-muted)' }}>Cargando telemetría...</div>
         ) : (

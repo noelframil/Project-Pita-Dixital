@@ -17,10 +17,13 @@
  * red de seguridad determinista (`detectLoop`) que no depende de su criterio.
  */
 import { createHmac } from 'node:crypto';
+import { queryOne, transaction } from '../db.js';
+import { extractText, type ChatMessage } from '../llm/index.js';
+import { loadHistory } from './conversations.js';
 import { config } from '../config.js';
-import { query, queryOne } from '../db.js';
+import { query } from '../db.js';
 import { decryptJson } from '../lib/crypto.js';
-import type { ChatMessage, ToolSpec } from '../llm/index.js';
+import type { ToolSpec } from '../llm/index.js';
 
 /** Nombre reservado. Un cliente no puede registrar una herramienta que se llame así. */
 export const HANDOFF_TOOL_NAME = 'escalar_a_humano';
@@ -160,7 +163,7 @@ export async function escalateToHuman(req: HandoffRequest): Promise<void> {
 export function detectLoop(history: ChatMessage[], threshold = 3): boolean {
   const userMessages = history
     .filter((m) => m.role === 'user')
-    .map((m) => normalize(m.content))
+    .map((m) => normalize(extractText(m.content)))
     .filter((t) => t.length >= 8); // "sí", "vale", "ok" se repiten sin significar nada
 
   if (userMessages.length < threshold) return false;

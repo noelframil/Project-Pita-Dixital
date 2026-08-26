@@ -26,6 +26,7 @@ function baseOptions(overrides: Partial<Parameters<typeof runAgent>[0]> = {}) {
     provider: 'ollama',
     model: 'de-mentira',
     system: 'Eres un asistente de una casa rural.',
+    clientId: 'test-client',
     messages: [{ role: 'user' as const, content: '¿a qué hora es el check-in?' }],
     temperature: 0.7,
     maxTokens: 500,

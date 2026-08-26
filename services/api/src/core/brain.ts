@@ -1,4 +1,4 @@
-import { queryOne } from '../db.js';
+import { queryOne, withAdvisoryLock } from '../db.js';
 import type { ChatMessage } from '../llm/index.js';
 import { config } from '../config.js';
 import {
@@ -70,6 +70,8 @@ export interface BotConfig {
   reflection_model: string | null;
   max_reflections: number;
   max_delegations: number;
+  fallback_reply: string;
+  handoff_user_reply: string;
 }
 
 export interface ThinkRequest {
@@ -88,6 +90,7 @@ export interface ThinkRequest {
   /** Coste de transcribir o describir, que no es del turno de chat. */
   mediaCostMicros?: number;
   images?: Array<{ base64: string; mime: string }>;
+  signal?: AbortSignal;
 }
 
 export interface ThinkResult {
@@ -104,10 +107,6 @@ export interface ThinkResult {
   stopReason: string;
 }
 
-/** Lo que se dice cuando el modelo devuelve vacío. Con la voz del bot, no un error crudo. */
-const FALLBACK_REPLY =
-  '¡Cococo! Se me cruzaron los cables del gallinero. ¿Puedes repetírmelo de otra manera?';
-
 export async function loadBotConfig(clientId: string): Promise<BotConfig | null> {
   return queryOne<BotConfig>(
     `SELECT id, client_id, system_prompt_template, dynamic_variables,
@@ -117,7 +116,7 @@ export async function loadBotConfig(clientId: string): Promise<BotConfig | null>
             rag_min_similarity, rag_top_k, handoff_enabled,
             memory_enabled, memory_max_facts,
             reflection_enabled, reflection_provider, reflection_model,
-            max_reflections, max_delegations
+            max_reflections, max_delegations, fallback_reply, handoff_user_reply
        FROM bot_configs
       WHERE client_id = $1 AND name = 'default'`,
     [clientId],
@@ -160,34 +159,51 @@ export async function think(req: ThinkRequest): Promise<ThinkResult> {
     channelAccountId: req.channelAccountId,
   });
 
-  await recordMessage({
-    conversationId: conversation.id,
-    role: 'user',
-    text: req.message,
-    providerMsgId: req.providerMsgId,
-    sourceKind: req.sourceKind ?? 'text',
-    mediaCostMicros: req.mediaCostMicros ?? null,
-  });
-
-  // Conversación ya derivada: el mensaje queda guardado —lo acabamos de hacer—
-  // y el bot no responde. Es lo que hace útil el handoff: si el bot siguiera
-  // contestando por encima de la persona, no habría derivado nada.
-  if (conversation.status === 'handoff') {
-    return {
-      reply: '',
+  return withAdvisoryLock(conversation.id, async () => {
+    const messageId = await recordMessage({
       conversationId: conversation.id,
-      model: cfg.model,
-      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-      costMicros: 0,
-      latencyMs: Date.now() - started,
-      handedOff: true,
-      toolsUsed: [],
-      steps: [],
-      stopReason: 'already_handed_off',
-    };
-  }
+      role: 'user',
+      text: req.message,
+      providerMsgId: req.providerMsgId,
+      sourceKind: req.sourceKind ?? 'text',
+      mediaCostMicros: req.mediaCostMicros ?? null,
+    });
 
-  const { variables } = mergeVariables(
+    if (!messageId) {
+      // Idempotencia: el mensaje ya existe y se ignoró por ON CONFLICT DO NOTHING.
+      return {
+        reply: '',
+        conversationId: conversation.id,
+        model: cfg.model,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        costMicros: 0,
+        latencyMs: Date.now() - started,
+        handedOff: conversation.status === 'handoff',
+        toolsUsed: [],
+        steps: [],
+        stopReason: 'duplicate_request',
+      };
+    }
+
+    // Conversación ya derivada: el mensaje queda guardado —lo acabamos de hacer—
+    // y el bot no responde. Es lo que hace útil el handoff: si el bot siguiera
+    // contestando por encima de la persona, no habría derivado nada.
+    if (conversation.status === 'handoff') {
+      return {
+        reply: '',
+        conversationId: conversation.id,
+        model: cfg.model,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        costMicros: 0,
+        latencyMs: Date.now() - started,
+        handedOff: true,
+        toolsUsed: [],
+        steps: [],
+        stopReason: 'already_handed_off',
+      };
+    }
+
+    const { variables } = mergeVariables(
     cfg.dynamic_variables ?? {},
     req.overrideVariables ?? {},
     cfg.allowed_override_vars ?? [],
@@ -352,9 +368,9 @@ export async function think(req: ThinkRequest): Promise<ThinkResult> {
   }
 
   const latencyMs = Date.now() - started;
-  const reply = run.text.trim() || FALLBACK_REPLY;
+  const reply = run.text.trim() || cfg.fallback_reply;
 
-  const messageId = await recordMessage({
+  const botMessageId = await recordMessage({
     conversationId: conversation.id,
     role: 'assistant',
     text: reply,
@@ -367,7 +383,7 @@ export async function think(req: ThinkRequest): Promise<ThinkResult> {
 
   // Las trazas del turno se enlazan con el mensaje que lo cerró. Va al final
   // porque el `message_id` no existe hasta ahora, y sin esperar: es auditoría.
-  if (messageId) linkRunToMessage(run.runId, messageId);
+  if (botMessageId) linkRunToMessage(run.runId, botMessageId);
 
   return {
     reply,
@@ -381,6 +397,7 @@ export async function think(req: ThinkRequest): Promise<ThinkResult> {
     steps: run.steps,
     stopReason: run.stopReason,
   };
+  });
 }
 
 /**
@@ -598,7 +615,7 @@ async function handOff(params: {
   await recordMessage({
     conversationId: conversation.id,
     role: 'assistant',
-    text: HANDOFF_USER_REPLY,
+    text: cfg.handoff_user_reply,
     model: cfg.model,
     tokensPrompt: params.usage.promptTokens,
     tokensCompletion: params.usage.completionTokens,
@@ -607,7 +624,7 @@ async function handOff(params: {
   });
 
   return {
-    reply: HANDOFF_USER_REPLY,
+    reply: cfg.handoff_user_reply,
     conversationId: conversation.id,
     model: cfg.model,
     usage: params.usage,

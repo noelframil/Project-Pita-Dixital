@@ -105,8 +105,13 @@ export default function MemoryPage() {
   };
 
   return (
-    <div className={styles.container}>
-      <header className={styles.header} style={{ marginBottom: '2rem' }}>
+    <div className={styles.container} style={{ position: 'relative', overflow: 'hidden' }}>
+      <div style={{ 
+        position: 'absolute', top: '-10%', left: '-5%', width: '400px', height: '400px', 
+        background: 'radial-gradient(circle, rgba(139,92,246,0.15) 0%, rgba(0,0,0,0) 70%)', 
+        filter: 'blur(40px)', zIndex: 0, pointerEvents: 'none' 
+      }} />
+      <header className={styles.header} style={{ marginBottom: '2rem', position: 'relative', zIndex: 1 }}>
         <div>
           <Link href="/"
             style={{
@@ -133,7 +138,7 @@ export default function MemoryPage() {
         </div>
       </header>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '1.5rem', marginBottom: '2rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '1.5rem', marginBottom: '2rem', position: 'relative', zIndex: 1 }}>
         {/* Uploader Card */}
         <div style={{ gridColumn: 'span 8' }}>
           <Card 
@@ -233,7 +238,7 @@ export default function MemoryPage() {
         </div>
       </div>
 
-      <div>
+      <div style={{ position: 'relative', zIndex: 1 }}>
         <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '1.5rem', color: 'var(--foreground)' }}>Documentos Ingeridos</h3>
         {loading ? (
           <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-muted)' }}>Cargando documentos de memoria...</div>

@@ -45,7 +45,7 @@ export function toAnthropicMessages(messages: ChatMessage[]): Anthropic.MessageP
       const block: Anthropic.ToolResultBlockParam = {
         type: 'tool_result',
         tool_use_id: msg.toolCallId ?? '',
-        content: msg.content,
+        content: typeof msg.content === 'string' ? msg.content : msg.content.map(c => c.type === 'text' ? { type: 'text', text: c.text! } : { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: c.image_url!.url.split(',')[1]! } }) as Anthropic.TextBlockParam[],
       };
       const last = out[out.length - 1];
       if (last?.role === 'user' && Array.isArray(last.content)) {
@@ -59,7 +59,8 @@ export function toAnthropicMessages(messages: ChatMessage[]): Anthropic.MessageP
     if (msg.role === 'assistant' && msg.toolCalls?.length) {
       const content: Anthropic.ContentBlockParam[] = [];
       // El texto que acompaña a la llamada es opcional; un bloque vacío es un 400.
-      if (msg.content.trim()) content.push({ type: 'text', text: msg.content });
+      const textContent = typeof msg.content === 'string' ? msg.content : msg.content.find(c => c.type === 'text')?.text || '';
+      if (textContent.trim()) content.push({ type: 'text', text: textContent });
       for (const call of msg.toolCalls) {
         content.push({ type: 'tool_use', id: call.id, name: call.name, input: call.input });
       }
@@ -67,9 +68,15 @@ export function toAnthropicMessages(messages: ChatMessage[]): Anthropic.MessageP
       continue;
     }
 
+    let parsedContent: string | Anthropic.ContentBlockParam[] = '';
+    if (typeof msg.content === 'string') {
+      parsedContent = msg.content;
+    } else {
+      parsedContent = msg.content.map(c => c.type === 'text' ? { type: 'text', text: c.text! } : { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: c.image_url!.url.split(',')[1]! } } as Anthropic.ContentBlockParam);
+    }
     out.push({
       role: msg.role === 'assistant' ? 'assistant' : 'user',
-      content: msg.content,
+      content: parsedContent,
     });
   }
 

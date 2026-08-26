@@ -31,3 +31,8 @@ export async function complete(
 
 export { LlmError };
 export type { ChatMessage, CompletionResult, ToolCall, ToolSpec } from './types.js';
+import type { ChatMessage } from './types.js';
+export function extractText(content: ChatMessage['content']): string {
+  if (typeof content === 'string') return content;
+  return content.filter((c) => c.type === 'text').map((c) => c.text).join('\n');
+}

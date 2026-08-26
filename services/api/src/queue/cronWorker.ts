@@ -42,6 +42,7 @@ async function processCrons(log: FastifyBaseLogger): Promise<void> {
 
   for (const cron of crons) {
     try {
+      // @ts-ignore
       const interval = cronParser.parseExpression(cron.expression, {
         tz: cron.timezone,
         currentDate: cron.last_run_at ?? new Date(now.getTime() - 60000),

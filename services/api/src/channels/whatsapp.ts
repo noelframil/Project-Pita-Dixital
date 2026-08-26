@@ -166,7 +166,7 @@ export const whatsappAdapter: ChannelAdapter = {
               surface: 'dm',
               content: {
                 media: [{
-                  kind: 'document',
+                  kind: 'file',
                   url: `whatsapp-media://${(msg as any).document.id}`,
                   mime: (msg as any).document.mime_type || 'application/pdf',
                 }]

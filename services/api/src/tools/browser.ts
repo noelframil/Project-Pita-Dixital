@@ -26,6 +26,7 @@ export async function runBrowserAutomation(input: Record<string, unknown>): Prom
 
     // Si no hay script, devolvemos el texto plano de la página por defecto
     const textContent = await page.evaluate(() => {
+      // @ts-ignore
       return document.body.innerText;
     });
 

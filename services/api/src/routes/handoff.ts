@@ -69,7 +69,7 @@ export async function handoffRoutes(app: FastifyInstance) {
       });
     }
 
-    const limit = checkRateLimit(`handoff:${client.clientId}`, config.RATE_LIMIT_PER_MINUTE);
+    const limit = await checkRateLimit(client.clientId, 'handoff_admin', config.RATE_LIMIT_PER_MINUTE);
     if (!limit.allowed) {
       return reply
         .code(429)
@@ -168,7 +168,7 @@ export async function handoffRoutes(app: FastifyInstance) {
       });
     }
 
-    const limit = checkRateLimit(`proactive:${client.clientId}`, config.RATE_LIMIT_PER_MINUTE);
+    const limit = await checkRateLimit(`proactive:${client.clientId}`, 'proactive_api', config.RATE_LIMIT_PER_MINUTE);
     if (!limit.allowed) {
       return reply
         .code(429)

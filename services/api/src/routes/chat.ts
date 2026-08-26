@@ -17,6 +17,7 @@ const ChatBody = z.object({
     .regex(/^[a-zA-Z0-9_:.-]+$/, 'session_id solo admite [a-zA-Z0-9_:.-]'),
   message: z.string().min(1).max(config.MAX_MESSAGE_CHARS),
   display_name: z.string().max(120).optional(),
+  provider_msg_id: z.string().max(128).optional(),
   override_variables: z.record(z.union([z.string(), z.number(), z.boolean()])).default({}),
   /**
    * Dónde se va a pintar la respuesta. No cambia la conversación —el canal
@@ -34,6 +35,7 @@ const ChatBody = z.object({
 const MultipartFields = ChatBody.extend({
   message: z.string().max(config.MAX_MESSAGE_CHARS).optional(),
   override_variables: z.string().optional(),
+  provider_msg_id: z.string().max(128).optional(),
   // En multipart todo llega como cadena, así que el valor por defecto se
   // aplica cuando el campo no viene.
   channel_type: z.enum(['web', 'whatsapp', 'telegram', 'sms', 'voice']).default('web'),
@@ -43,6 +45,7 @@ interface ParsedRequest {
   sessionId: string;
   message: string;
   displayName?: string;
+  providerMsgId?: string;
   overrideVariables: Record<string, unknown>;
   media: MediaInput[];
   channelType: ChannelType;
@@ -63,13 +66,9 @@ export async function chatRoutes(app: FastifyInstance) {
     // El límite va antes de leer el cuerpo y antes de llamar al modelo. Después
     // no ahorra nada, y con multipart importa más: un adjunto de 10 MB consume
     // memoria y ancho de banda antes de que se decida si el cliente puede.
-    const limit = checkRateLimit(`chat:${client.clientId}`, config.RATE_LIMIT_PER_MINUTE);
-    if (!limit.allowed) {
-      return reply
-        .code(429)
-        .header('retry-after', String(limit.retryAfterSeconds))
-        .send({ error: 'rate_limited', retry_after: limit.retryAfterSeconds });
-    }
+    // Nota: Aún no tenemos el body parseado para el channelUserId aquí, así que aplicamos un rate limit preliminar
+    // por IP o clientId global si queremos, pero el rateLimit real se hace después de parsear.
+    // Para respetar la arquitectura, parseamos primero.
 
     let parsed: ParsedRequest;
     try {
@@ -93,7 +92,15 @@ export async function chatRoutes(app: FastifyInstance) {
         });
       }
       request.log.error({ err }, 'no se pudo leer la petición');
-      return reply.code(400).send({ error: 'invalid_request' });
+        return reply.code(400).send({ error: 'invalid_request' });
+    }
+
+    const limit = await checkRateLimit(client.clientId, parsed.sessionId, config.RATE_LIMIT_PER_MINUTE);
+    if (!limit.allowed) {
+      return reply
+        .code(429)
+        .header('retry-after', String(limit.retryAfterSeconds))
+        .send({ error: 'rate_limited', retry_after: limit.retryAfterSeconds });
     }
 
     // ── Multimodal: todo a texto antes de entrar al núcleo ────────
@@ -120,17 +127,27 @@ export async function chatRoutes(app: FastifyInstance) {
 
     try {
       const safeSourceKind = ingested.sourceKind === 'document' ? 'text' : ingested.sourceKind;
-      const result = await think({
-        clientId: client.clientId,
-        channel: 'web',
-        channelUserId: parsed.sessionId,
-        threadRef: parsed.sessionId,
-        message: ingested.message,
-        displayName: parsed.displayName,
-        overrideVariables: parsed.overrideVariables,
-        sourceKind: safeSourceKind,
-        mediaCostMicros: ingested.mediaCostMicros,
-      });
+      const controller = new AbortController();
+      const turnTimeout = setTimeout(() => controller.abort(new Error('Turn timeout')), 60000);
+
+      let result;
+      try {
+        result = await think({
+          clientId: client.clientId,
+          channel: 'web',
+          channelUserId: parsed.sessionId,
+          threadRef: parsed.sessionId,
+          message: ingested.message,
+          displayName: parsed.displayName,
+          providerMsgId: parsed.providerMsgId,
+          overrideVariables: parsed.overrideVariables,
+          sourceKind: safeSourceKind,
+          mediaCostMicros: ingested.mediaCostMicros,
+          signal: controller.signal
+        });
+      } finally {
+        clearTimeout(turnTimeout);
+      }
 
       if (result.handedOff) {
         return reply.send({
@@ -195,6 +212,7 @@ function parseJson(request: FastifyRequest): ParsedRequest {
     sessionId: body.session_id,
     message: body.message,
     displayName: body.display_name,
+    providerMsgId: body.provider_msg_id,
     overrideVariables: body.override_variables,
     media: [],
     channelType: body.channel_type,
@@ -248,6 +266,7 @@ async function parseMultipart(request: FastifyRequest): Promise<ParsedRequest> {
     session_id: fields.session_id,
     message: fields.message,
     display_name: fields.display_name,
+    provider_msg_id: fields.provider_msg_id,
     override_variables: fields.override_variables,
     ...(fields.channel_type && { channel_type: fields.channel_type }),
   });
@@ -271,6 +290,7 @@ async function parseMultipart(request: FastifyRequest): Promise<ParsedRequest> {
     sessionId: parsedFields.session_id,
     message: parsedFields.message ?? '',
     displayName: parsedFields.display_name,
+    providerMsgId: parsedFields.provider_msg_id,
     overrideVariables,
     media,
     channelType: parsedFields.channel_type,

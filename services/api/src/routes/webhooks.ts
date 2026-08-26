@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { query } from '../db.js';
 import { decryptJson } from '../lib/crypto.js';
+import type { ChannelKind } from '../channels/types.js';
 import { think } from '../core/brain.js';
 import { claimProviderMessage } from '../core/conversations.js';
 import { whatsappAdapter } from '../channels/whatsapp.js';
@@ -248,8 +249,8 @@ export const webhookRoutes: FastifyPluginAsync = async (app) => {
   // Webhook de Twilio para llamadas (TwiML)
   app.post('/api/v1/webhooks/twilio', async (req, reply) => {
     // Para simplificar MVP, tomamos la primera cuenta Twilio activa
-    const rows = await query<{ id: string, client_id: string, external_id: string, credentials: Buffer }>(
-      `SELECT id, client_id, external_id, credentials FROM channel_accounts WHERE channel = 'twilio' AND is_active = TRUE LIMIT 1`
+    const rows = await query<{ id: string, client_id: string, external_id: string, credentials: Buffer, channel: ChannelKind }>(
+      `SELECT id, client_id, external_id, credentials, channel FROM channel_accounts WHERE provider = 'twilio' AND is_active = TRUE LIMIT 1`
     );
     
     if (rows.length === 0) {
@@ -260,7 +261,7 @@ export const webhookRoutes: FastifyPluginAsync = async (app) => {
     const account: ChannelAccount = {
       id: rows[0]!.id,
       clientId: rows[0]!.client_id,
-      channel: 'twilio',
+      channel: rows[0]!.channel,
       externalId: rows[0]!.external_id,
       credentials: decryptJson(rows[0]!.credentials),
     };

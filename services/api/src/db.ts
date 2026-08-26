@@ -9,7 +9,7 @@ pg.types.setTypeParser(pg.types.builtins.INT8, (v) => Number(v));
 
 export const pool = new pg.Pool({
   connectionString: config.DATABASE_URL,
-  max: 10,
+  max: 50,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,
 });
@@ -44,6 +44,32 @@ export async function transaction<T>(fn: (c: pg.PoolClient) => Promise<T>): Prom
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Adquiere un advisory lock a nivel de sesión (no transaccional) sobre un hash.
+ * Si no lo consigue, espera (bloquea) hasta tenerlo.
+ */
+export async function withAdvisoryLock<T>(
+  lockKey: string,
+  fn: () => Promise<T>
+): Promise<T> {
+  const client = await pool.connect();
+  try {
+    // hashtext() genera un int32, pg_advisory_lock soporta bigint (un arg) o int32, int32 (dos args).
+    // Usamos la variante de 1 argumento casteando el string a un número hash mediante la db.
+    // pg_try_advisory_lock sería no bloqueante, pero pg_advisory_lock bloquea y encola peticiones.
+    const res = await client.query('SELECT hashtext($1) AS hash', [lockKey]);
+    const hash = res.rows[0].hash;
+    await client.query('SELECT pg_advisory_lock($1)', [hash]);
+    try {
+      return await fn();
+    } finally {
+      await client.query('SELECT pg_advisory_unlock($1)', [hash]);
+    }
   } finally {
     client.release();
   }

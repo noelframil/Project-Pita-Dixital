@@ -12,7 +12,7 @@
  * desde cero, y los mensajes ya resumidos no se vuelven a leer de la base de datos.
  */
 import { config } from '../config.js';
-import { complete, type ChatMessage } from '../llm/index.js';
+import { extractText, type ChatMessage, complete } from '../llm/index.js';
 
 /**
  * Estimación de tokens, no cuenta exacta.
@@ -31,7 +31,7 @@ export function estimateTokens(text: string): number {
 }
 
 export function estimateMessageTokens(msg: ChatMessage): number {
-  let total = estimateTokens(msg.content);
+  let total = estimateTokens(extractText(msg.content));
   // Una llamada a herramienta viaja como JSON y ocupa lo suyo.
   if (msg.toolCalls?.length) {
     for (const call of msg.toolCalls) {
@@ -88,7 +88,7 @@ Si te dan un resumen previo, devuelve uno solo que lo incorpore, no dos pegados.
 function renderForSummary(messages: ChatMessage[]): string {
   return messages
     .filter((m) => m.role === 'user' || m.role === 'assistant')
-    .map((m) => `${m.role === 'user' ? 'Usuario' : 'Asistente'}: ${m.content}`)
+    .map((m) => `${m.role === 'user' ? 'Usuario' : 'Asistente'}: ${extractText(m.content)}`)
     .join('\n');
 }
 

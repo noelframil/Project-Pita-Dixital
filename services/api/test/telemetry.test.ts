@@ -204,6 +204,7 @@ describe('el agente sigue funcionando con la auditoría rota', () => {
       provider: 'ollama',
       model: 'de-mentira',
       system: 'Eres un asistente.',
+      clientId: 'test-client',
       messages: [{ role: 'user' as const, content: 'hola' }],
       temperature: 0.7,
       maxTokens: 500,
