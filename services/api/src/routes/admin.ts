@@ -392,30 +392,69 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
-  app.post<{ Body: { clientId: string, message: string } }>('/api/v1/admin/sandbox/chat', async (req, reply) => {
-    const { clientId, message } = req.body;
+  app.post('/api/v1/admin/sandbox/chat', async (req, reply) => {
+    let clientId = '';
+    let message = '';
+    const media = [];
+
+    if (req.isMultipart()) {
+      for await (const part of req.parts()) {
+        if (part.type === 'file') {
+          const buffer = await part.toBuffer();
+          media.push({
+            kind: part.mimetype.startsWith('image/') ? 'image' : 'audio',
+            buffer,
+            mime: part.mimetype,
+            filename: part.filename,
+          });
+        } else {
+          if (part.fieldname === 'clientId') clientId = String(part.value);
+          if (part.fieldname === 'message') message = String(part.value);
+        }
+      }
+    } else {
+      const body = req.body as { clientId: string, message: string };
+      clientId = body.clientId;
+      message = body.message;
+    }
+
     const sessionId = 'sandbox-' + clientId;
 
+    let ingestedMessage = message;
+    let sourceKind: 'text' | 'audio' | 'image' | 'document' = 'text';
+    let mediaCostMicros = 0;
+
     try {
+      if (media.length > 0) {
+        const { ingest } = await import('../media/ingest.js');
+        const ingested = await ingest({ text: message, media: media as any });
+        ingestedMessage = ingested.message;
+        sourceKind = ingested.sourceKind;
+        mediaCostMicros = ingested.mediaCostMicros;
+      }
+
+      const safeSourceKind = sourceKind === 'document' ? 'text' : sourceKind;
+
       const result = await think({
         clientId: clientId,
         channel: 'web',
         channelUserId: sessionId,
         threadRef: sessionId,
-        message: message,
+        message: ingestedMessage,
         overrideVariables: {},
-        sourceKind: 'text',
-        mediaCostMicros: 0,
+        sourceKind: safeSourceKind,
+        mediaCostMicros: mediaCostMicros,
       });
 
       return { success: true, reply: result.reply, tools: result.toolsUsed, iterations: result.steps.length };
     } catch (err: any) {
       app.log.warn('Fallback a respuesta mockeada debido a error: ' + String(err));
       // Mock response para la demo local sin DB
+      const mockMsg = ingestedMessage || 'Archivo recibido';
       return {
         success: true,
-        reply: '¡Hola! Soy la IA de tu proyecto simulada en el Sandbox. He recibido tu mensaje: "' + message + '". Al no haber conexión con PostgreSQL, devuelvo este texto automático.',
-        tools: [{ tool: 'search_knowledge', input: { query: message } }],
+        reply: '¡Hola! He recibido tu mensaje o archivo simulado en el Sandbox: "' + mockMsg + '". Al no haber conexión con PostgreSQL, devuelvo este texto automático.',
+        tools: [{ tool: 'search_knowledge', input: { query: mockMsg } }],
         iterations: 1
       };
     }

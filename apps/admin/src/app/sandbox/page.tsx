@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Send, Terminal, Settings, Wrench, RefreshCw, User, Bot } from 'lucide-react';
+import { ArrowLeft, Send, Terminal, Settings, Wrench, RefreshCw, User, Bot, Mic, Image as ImageIcon, X, Loader2 } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import styles from '../clients/page.module.css';
 
@@ -20,6 +20,8 @@ type Message = {
   tools?: { tool: string; input: any }[];
   latency?: number;
   timestamp: Date;
+  imageUrl?: string;
+  audioUrl?: string;
 };
 
 export default function SandboxPage() {
@@ -30,8 +32,17 @@ export default function SandboxPage() {
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Multimodal State
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
-    // Load clients for the selector
     fetch('/api/v1/admin/clients')
       .then(res => res.json())
       .then(data => {
@@ -45,33 +56,104 @@ export default function SandboxPage() {
   }, []);
 
   useEffect(() => {
-    // Scroll to bottom when messages change
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  useEffect(() => {
+    if (isRecording) {
+      timerRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+      setRecordingTime(0);
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isRecording]);
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      setSelectedImage(file);
+      setImagePreviewUrl(URL.createObjectURL(file));
+    }
+  };
+
+  const toggleRecording = async () => {
+    if (isRecording) {
+      mediaRecorderRef.current?.stop();
+      setIsRecording(false);
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) audioChunksRef.current.push(e.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          stream.getTracks().forEach(track => track.stop());
+          await sendMultimodalMessage(audioBlob);
+        };
+
+        mediaRecorder.start();
+        setIsRecording(true);
+      } catch (err) {
+        console.error('Error al acceder al micrófono:', err);
+        alert('No se pudo acceder al micrófono.');
+      }
+    }
+  };
+
   const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!inputValue.trim() || !selectedClient || isLoading) return;
+    if (isRecording) return;
+    if (!inputValue.trim() && !selectedImage) return;
+    await sendMultimodalMessage();
+  };
+
+  const sendMultimodalMessage = async (audioBlob?: Blob) => {
+    if (!selectedClient || isLoading) return;
 
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: inputValue,
+      content: audioBlob ? '🎤 Nota de voz enviada' : inputValue,
       timestamp: new Date(),
+      imageUrl: imagePreviewUrl || undefined,
+      audioUrl: audioBlob ? URL.createObjectURL(audioBlob) : undefined
     };
 
     setMessages(prev => [...prev, userMsg]);
+    const tempInput = inputValue;
+    const tempImage = selectedImage;
+    
     setInputValue('');
+    setSelectedImage(null);
+    setImagePreviewUrl(null);
     setIsLoading(true);
 
     try {
+      const formData = new FormData();
+      formData.append('clientId', selectedClient);
+      formData.append('message', tempInput || '');
+      
+      if (tempImage) {
+        formData.append('image', tempImage);
+      }
+      if (audioBlob) {
+        formData.append('audio', audioBlob, 'voice.webm');
+      }
+
       const res = await fetch('/api/v1/admin/sandbox/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clientId: selectedClient,
-          message: userMsg.content
-        })
+        body: formData // No headers needed for fetch to auto-set multipart/form-data
       });
 
       const data = await res.json();
@@ -91,7 +173,7 @@ export default function SandboxPage() {
       setMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: '❌ Error de conexión con el Sandbox.',
+        content: '❌ Error de conexión con el Sandbox multimodelo.',
         timestamp: new Date(),
       }]);
     } finally {
@@ -101,6 +183,12 @@ export default function SandboxPage() {
 
   const clearChat = () => {
     setMessages([]);
+  };
+
+  const formatTime = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
   return (
@@ -126,10 +214,10 @@ export default function SandboxPage() {
             animate={{ opacity: 1, x: 0 }}
             style={{ fontSize: '2rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--foreground)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
           >
-            <Terminal size={28} color="var(--primary)" /> Sandbox
+            <Terminal size={28} color="var(--primary)" /> Sandbox Multimodal
           </motion.h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '1rem', margin: 0 }}>
-            Prueba tus asistentes en vivo sin necesidad de conectarlos a un canal.
+            Prueba tus asistentes con texto, imágenes y notas de voz en vivo.
           </p>
         </div>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
@@ -183,7 +271,7 @@ export default function SandboxPage() {
             {messages.length === 0 ? (
               <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--text-muted)' }}>
                 <Terminal size={48} style={{ opacity: 0.2, marginBottom: '1rem' }} />
-                <p>Escribe un mensaje para empezar a simular.</p>
+                <p>Escribe un mensaje, envía una foto o graba un audio para empezar.</p>
               </div>
             ) : (
               messages.map((msg, i) => (
@@ -218,8 +306,17 @@ export default function SandboxPage() {
                     border: msg.role === 'user' ? 'none' : '1px solid var(--glass-border)',
                     borderBottomRightRadius: msg.role === 'user' ? '4px' : '1.25rem',
                     borderBottomLeftRadius: msg.role === 'user' ? '1.25rem' : '4px',
-                    lineHeight: 1.5
+                    lineHeight: 1.5,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.5rem'
                   }}>
+                    {msg.imageUrl && (
+                      <img src={msg.imageUrl} alt="User attachment" style={{ maxWidth: '100%', borderRadius: '8px', maxHeight: '200px', objectFit: 'cover' }} />
+                    )}
+                    {msg.audioUrl && (
+                      <audio controls src={msg.audioUrl} style={{ maxWidth: '100%', height: '40px' }} />
+                    )}
                     {msg.content}
                   </div>
                   {msg.tools && msg.tools.length > 0 && (
@@ -251,34 +348,93 @@ export default function SandboxPage() {
             )}
             <div ref={messagesEndRef} />
           </div>
-          <div style={{ padding: '1rem', borderTop: '1px solid var(--glass-border)', background: 'rgba(0,0,0,0.1)' }}>
-            <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '0.75rem' }}>
-              <input 
-                type="text" 
-                placeholder="Habla con el bot..."
-                value={inputValue}
-                onChange={e => setInputValue(e.target.value)}
-                style={{ 
-                  flex: 1, padding: '0.8rem 1rem', 
-                  background: 'rgba(255,255,255,0.05)', color: 'var(--foreground)', 
-                  border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-lg)',
-                  outline: 'none'
-                }}
-              />
+          
+          {/* Input Area */}
+          <div style={{ padding: '1rem', borderTop: '1px solid var(--glass-border)', background: 'rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <AnimatePresence>
+              {imagePreviewUrl && (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9 }} style={{ position: 'relative', width: 'fit-content' }}>
+                  <img src={imagePreviewUrl} alt="Preview" style={{ height: '60px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)' }} />
+                  <button onClick={() => { setImagePreviewUrl(null); setSelectedImage(null); }} style={{ position: 'absolute', top: -5, right: -5, background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                    <X size={12} />
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              {/* Image Input Hidden */}
+              <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageSelect} style={{ display: 'none' }} />
+              
               <button 
-                type="submit"
-                disabled={isLoading || !inputValue.trim()}
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isLoading || isRecording}
                 style={{ 
-                  padding: '0 1.25rem', 
-                  background: 'var(--primary)', color: '#fff', 
-                  border: 'none', borderRadius: 'var(--radius-lg)',
-                  cursor: (isLoading || !inputValue.trim()) ? 'not-allowed' : 'pointer',
-                  opacity: (isLoading || !inputValue.trim()) ? 0.5 : 1,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                  padding: '0.8rem', background: 'transparent', color: 'var(--text-muted)', border: 'none', cursor: 'pointer',
+                  transition: 'color 0.2s'
                 }}
               >
-                <Send size={18} />
+                <ImageIcon size={20} />
               </button>
+
+              {isRecording ? (
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: 'var(--radius-lg)', padding: '0.5rem' }}>
+                  <motion.div animate={{ opacity: [1, 0.5, 1] }} transition={{ repeat: Infinity, duration: 1.5 }}>
+                    <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'var(--danger)' }} />
+                  </motion.div>
+                  <span style={{ color: 'var(--danger)', fontWeight: 600, fontFamily: 'monospace', fontSize: '1.1rem' }}>
+                    {formatTime(recordingTime)}
+                  </span>
+                </div>
+              ) : (
+                <input 
+                  type="text" 
+                  placeholder="Escribe un mensaje al bot..."
+                  value={inputValue}
+                  onChange={e => setInputValue(e.target.value)}
+                  disabled={isLoading}
+                  style={{ 
+                    flex: 1, padding: '0.8rem 1rem', 
+                    background: 'rgba(255,255,255,0.05)', color: 'var(--foreground)', 
+                    border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-lg)',
+                    outline: 'none'
+                  }}
+                />
+              )}
+
+              <button 
+                type="button"
+                onClick={toggleRecording}
+                disabled={isLoading}
+                style={{ 
+                  padding: '0.8rem', 
+                  background: isRecording ? 'var(--danger)' : 'transparent', 
+                  color: isRecording ? 'white' : 'var(--text-muted)', 
+                  border: 'none', borderRadius: '50%', cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <Mic size={20} />
+              </button>
+
+              {!isRecording && (
+                <button 
+                  type="submit"
+                  disabled={isLoading || (!inputValue.trim() && !selectedImage)}
+                  style={{ 
+                    padding: '0 1.25rem', height: '45px',
+                    background: 'var(--primary)', color: '#fff', 
+                    border: 'none', borderRadius: 'var(--radius-lg)',
+                    cursor: (isLoading || (!inputValue.trim() && !selectedImage)) ? 'not-allowed' : 'pointer',
+                    opacity: (isLoading || (!inputValue.trim() && !selectedImage)) ? 0.5 : 1,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    marginLeft: '0.25rem'
+                  }}
+                >
+                  <Send size={18} />
+                </button>
+              )}
             </form>
           </div>
         </Card>
@@ -310,6 +466,10 @@ export default function SandboxPage() {
                 <span style={{ color: 'var(--foreground)', fontWeight: 500 }}>
                   {messages.length} msg
                 </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--glass-border)' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Multimodal:</span>
+                <span style={{ color: 'var(--success)', fontWeight: 600 }}>ACTIVO</span>
               </div>
             </div>
           </div>
