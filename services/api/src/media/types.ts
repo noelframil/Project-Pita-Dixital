@@ -23,7 +23,7 @@
  * herramienta, no reenviarlo siempre.
  */
 
-export type MediaKind = 'audio' | 'image' | 'document';
+export type MediaKind = 'audio' | 'image' | 'document' | 'video';
 
 export interface MediaInput {
   kind: MediaKind;
@@ -40,6 +40,12 @@ export interface MediaExtraction {
   text: string;
   base64?: string;
   mime?: string;
+  /** 
+   * Opcional: Estructura de datos duros extraída. 
+   * Ej: Si es un pasaporte -> { type: 'id', mrz: '...', name: '...' }
+   * Si es una factura -> { type: 'invoice', iban: '...', total: 400 }
+   */
+  metadata?: Record<string, any>;
   kind: MediaKind;
   model: string;
   costMicros: number;
