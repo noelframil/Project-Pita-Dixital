@@ -8,6 +8,7 @@ import { saveToMemory } from './memory.js';
 import { scheduleCron } from './cron.js';
 import { makePhoneCall } from './twilio.js';
 import { checkInventoryTool, triggerProcurementTool } from './supply.js';
+import { processPassportCheckin, issueDigitalKey } from './kiosk.js';
 import type { RegisteredTool, ToolResult } from '../core/tools.js';
 
 export async function executeNativeTool(
@@ -50,6 +51,10 @@ export async function executeNativeTool(
       content = await checkInventoryTool.execute(input as any);
     } else if (tool.name === 'trigger_procurement_cycle') {
       content = await triggerProcurementTool.execute(input as any);
+    } else if (tool.name === 'process_passport_checkin') {
+      content = await processPassportCheckin.execute(input as any);
+    } else if (tool.name === 'issue_digital_key') {
+      content = await issueDigitalKey.execute(input as any);
     } else {
       throw new Error(`Unknown native tool: ${tool.name}`);
     }
