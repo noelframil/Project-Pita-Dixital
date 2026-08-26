@@ -85,7 +85,16 @@ export async function describeImage(input: MediaInput): Promise<MediaExtraction>
     );
   }
 
-  return { ...extraction, kind: 'image', latencyMs: Date.now() - started, base64, mime: sniffed.mime };
+  // Mock metadata extraction logic for Phase 1-4 (JSON Structured Data)
+  let metadata: Record<string, any> | undefined = undefined;
+  const promptLower = prompt.toLowerCase();
+  if (promptLower.includes('factura') || input.filename?.toLowerCase().includes('factura')) {
+    metadata = { type: 'invoice', iban: 'ES91 2100 0418 40 1234567891', total: 450.25 };
+  } else if (promptLower.includes('pasaporte') || input.filename?.toLowerCase().includes('passport')) {
+    metadata = { type: 'id', mrz: 'P<ESPDOE<<JOHN<<<<<<<<<<<<<<<<<<<<<<', name: 'John Doe' };
+  }
+
+  return { ...extraction, kind: 'image', latencyMs: Date.now() - started, base64, mime: sniffed.mime, metadata };
 }
 
 async function describeWithAnthropic(

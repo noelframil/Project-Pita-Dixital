@@ -9,6 +9,7 @@ import { config } from '../config.js';
 import { transcribeAudio } from './audio.js';
 import { describeImage } from './vision.js';
 import { parseDocument } from './document.js';
+import { processVideo } from './video.js';
 import { MediaError, sniffMedia, type MediaExtraction, type MediaInput } from './types.js';
 
 export interface IngestInput {
@@ -22,7 +23,7 @@ export interface IngestResult {
   /** Imágenes en base64 para modelos multimodales. */
   images?: Array<{ base64: string; mime: string }>;
   /** 'text' cuando no había adjuntos; si los había, el del primero. */
-  sourceKind: 'text' | 'audio' | 'image' | 'document';
+  sourceKind: 'text' | 'audio' | 'image' | 'document' | 'video';
   extractions: MediaExtraction[];
   /** Coste de transcribir y describir, aparte del turno del chat. */
   mediaCostMicros: number;
@@ -118,10 +119,11 @@ async function extractOne(item: MediaInput): Promise<MediaExtraction> {
   if (kind === 'audio') return transcribeAudio({ ...item, kind: 'audio' });
   if (kind === 'image') return describeImage({ ...item, kind: 'image' });
   if (kind === 'document') return parseDocument({ ...item, kind: 'document' });
+  if (kind === 'video') return processVideo({ ...item, kind: 'video' });
 
   throw new MediaError(
     `Tipo de adjunto no soportado: ${item.mime}`,
-    'Ese tipo de archivo no lo puedo abrir. Puedo con notas de voz e imágenes.',
+    'Ese tipo de archivo no lo puedo abrir. Puedo con notas de voz, vídeos e imágenes.',
   );
 }
 
@@ -135,7 +137,7 @@ async function extractOne(item: MediaInput): Promise<MediaExtraction> {
  */
 export async function fetchMedia(
   url: string,
-  kind: 'audio' | 'image' | 'document',
+  kind: 'audio' | 'image' | 'document' | 'video',
   headers: Record<string, string> = {},
 ): Promise<MediaInput> {
   const res = await fetch(url, {
