@@ -42,11 +42,14 @@ export function toAnthropicMessages(messages: ChatMessage[]): Anthropic.MessageP
 
   for (const msg of messages) {
     if (msg.role === 'tool') {
-      const block: Anthropic.ToolResultBlockParam = {
+      const block: Anthropic.ToolResultBlockParam & { cache_control?: { type: 'ephemeral' } } = {
         type: 'tool_result',
         tool_use_id: msg.toolCallId ?? '',
         content: typeof msg.content === 'string' ? msg.content : msg.content.map(c => c.type === 'text' ? { type: 'text', text: c.text! } : { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: c.image_url!.url.split(',')[1]! } }) as Anthropic.TextBlockParam[],
       };
+      if (msg.cacheable) {
+        block.cache_control = { type: 'ephemeral' };
+      }
       const last = out[out.length - 1];
       if (last?.role === 'user' && Array.isArray(last.content)) {
         last.content.push(block);
@@ -64,15 +67,29 @@ export function toAnthropicMessages(messages: ChatMessage[]): Anthropic.MessageP
       for (const call of msg.toolCalls) {
         content.push({ type: 'tool_use', id: call.id, name: call.name, input: call.input });
       }
+      if (msg.cacheable && content.length > 0) {
+        (content[content.length - 1] as any).cache_control = { type: 'ephemeral' };
+      }
       out.push({ role: 'assistant', content });
       continue;
     }
 
-    let parsedContent: string | Anthropic.ContentBlockParam[] = '';
+    if (typeof msg.content === 'string' && !msg.cacheable) {
+      out.push({
+        role: msg.role === 'assistant' ? 'assistant' : 'user',
+        content: msg.content,
+      });
+      continue;
+    }
+
+    let parsedContent: Anthropic.ContentBlockParam[] = [];
     if (typeof msg.content === 'string') {
-      parsedContent = msg.content;
+      parsedContent = [{ type: 'text', text: msg.content }];
     } else {
       parsedContent = msg.content.map(c => c.type === 'text' ? { type: 'text', text: c.text! } : { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: c.image_url!.url.split(',')[1]! } } as Anthropic.ContentBlockParam);
+    }
+    if (msg.cacheable && parsedContent.length > 0) {
+      (parsedContent[parsedContent.length - 1] as any).cache_control = { type: 'ephemeral' };
     }
     out.push({
       role: msg.role === 'assistant' ? 'assistant' : 'user',
@@ -92,7 +109,7 @@ export const anthropicProvider: LlmProvider = {
     const params: Anthropic.MessageCreateParamsNonStreaming = {
       model: req.model,
       max_tokens: req.maxTokens,
-      system: req.system,
+      system: req.systemCacheable ? [{ type: 'text', text: req.system, cache_control: { type: 'ephemeral' } } as any] : req.system,
       messages: toAnthropicMessages(req.messages),
     };
     if (!REJECTS_TEMPERATURE.test(req.model)) {
@@ -100,11 +117,17 @@ export const anthropicProvider: LlmProvider = {
     }
 
     if (req.tools?.length) {
-      params.tools = req.tools.map((t) => ({
-        name: t.name,
-        description: t.description,
-        input_schema: t.inputSchema as Anthropic.Tool.InputSchema,
-      }));
+      params.tools = req.tools.map((t) => {
+        const tool: Anthropic.Tool = {
+          name: t.name,
+          description: t.description,
+          input_schema: t.inputSchema as Anthropic.Tool.InputSchema,
+        };
+        if (t.cacheable) {
+          (tool as any).cache_control = { type: 'ephemeral' };
+        }
+        return tool;
+      });
     }
 
     // `output_config` es GA, pero los tipos del SDK van por detrás de la API.

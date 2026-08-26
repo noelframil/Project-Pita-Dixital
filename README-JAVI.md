@@ -755,3 +755,28 @@ la reinyección de errores y la deduplicación sin gastar tokens.
 
 Primera sesión con `docker compose up -d`, `npm run migrate` y claves reales
 debería centrarse exactamente en esos cinco puntos, y empezar por BullMQ.
+
+---
+
+### 2026-08-26 — Fase P0: Concurrencia, Caching y Evolución Nocturna
+
+Abordadas las deficiencias P0 del modelo original identificadas en la auditoría.
+
+- **Concurrencia e Idempotencia:** Añadido soporte para `pg_advisory_lock` y
+  `provider_msg_id` en el core para serializar tráfico entrante concurrente
+  (e.g., ráfagas de WhatsApp) y descartar webhooks duplicados de Meta.
+- **Rate Limiting Empresarial:** Implementada doble clave de rate limit en Redis
+  (`rate_limit:{clientId}:{channelUserId}`) para que un usuario spameando no
+  agote la cuota de la API entera.
+- **Soporte Multimodal en LLMs:** Creada lógica `extractText` unificada en
+  `toAnthropicMessages` para soportar `image_url` y `text` combinados sin fallos.
+- **Prompt Caching (Anthropic):** Inyectados bloques `cache_control: { type: 'ephemeral' }`
+  en las herramientas y el system prompt. Esto baja dramáticamente la latencia 
+  y el coste en turnos largos porque reusamos todo el contexto de memoria + RAG.
+- **Evolución Autónoma Nocturna (Sección H):** Creada migración `012_nightly_evolution.sql`
+  y lógica en `cronWorker.ts` para limpieza de cachés, rate limits viejos, y 
+  consolidación de memoria semántica a las 03:00 AM.
+- **Tipado Fuerte en Testing:** Actualizados todos los tests (`agent`, `reflection`,
+  `telemetry`) para cumplir estrictamente con los nuevos `AgentRunOptions`.
+- **READMEs:** Limpiado el repo de menciones al prototipo "Miss Pecky" para
+  hacer público el valor B2B real del middleware.

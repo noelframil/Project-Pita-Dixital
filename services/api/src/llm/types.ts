@@ -13,6 +13,8 @@ export interface ChatMessage {
   toolCalls?: ToolCall[];
   /** A qué llamada responde este resultado. Solo en `tool`. */
   toolCallId?: string;
+  /** Indica si este mensaje debe usar prompt caching (Anthropic). */
+  cacheable?: boolean;
 }
 
 /**
@@ -23,6 +25,8 @@ export interface ToolSpec {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  /** Indica si esta herramienta debe marcar el final del bloque de caché. */
+  cacheable?: boolean;
 }
 
 /** Petición de ejecución que devuelve el modelo. */
@@ -54,6 +58,8 @@ export interface JsonSchemaSpec {
 export interface CompletionRequest {
   model: string;
   system: string;
+  /** Indica si el system prompt debe usar prompt caching. */
+  systemCacheable?: boolean;
   messages: ChatMessage[];
   temperature: number;
   maxTokens: number;

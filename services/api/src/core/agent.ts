@@ -206,7 +206,16 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
     ...(opts.builtins ?? []).map((b) => b.spec),
   ];
 
+  if (toolSpecs.length > 0) {
+    toolSpecs[toolSpecs.length - 1].cacheable = true;
+  }
+
   const messages: ChatMessage[] = [...opts.messages];
+  // Cache the last user message of the initial history
+  const lastUserIdx = messages.findLastIndex((m) => m.role === 'user');
+  if (lastUserIdx >= 0) {
+    messages[lastUserIdx] = { ...messages[lastUserIdx], cacheable: true };
+  }
   const transcript: ChatMessage[] = [];
   const steps: AgentStep[] = [];
   const toolsUsed: string[] = [];
@@ -238,6 +247,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
       result = await complete(opts.provider, {
         model: opts.model,
         system: opts.system,
+        systemCacheable: true,
         messages,
         temperature: opts.temperature,
         maxTokens: opts.maxTokens,

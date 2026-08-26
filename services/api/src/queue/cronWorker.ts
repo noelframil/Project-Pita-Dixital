@@ -23,6 +23,7 @@ export function startCronWorker(log: FastifyBaseLogger): () => void {
     isRunning = true;
     try {
       await processCrons(log);
+      await processNightlyEvolution(log);
     } catch (err) {
       log.error({ err }, 'Error en el worker de crons');
     } finally {
@@ -76,7 +77,40 @@ async function processCrons(log: FastifyBaseLogger): Promise<void> {
         }
       }
     } catch (err) {
-      log.error({ cronId: cron.id, err }, 'Fallo al parsear o ejecutar cron');
+      log.error({ err, cronId: cron.id }, 'Error procesando cron');
     }
+  }
+}
+
+async function processNightlyEvolution(log: FastifyBaseLogger): Promise<void> {
+  // Solo se ejecuta entre las 03:00 y las 04:00 AM
+  const now = new Date();
+  if (now.getHours() !== 3) return;
+
+  // Comprobar si ya corrió hoy
+  const todayStr = now.toISOString().split('T')[0];
+  const jobName = `nightly_evolution_${todayStr}`;
+  const existing = await query<{id: number}>(`SELECT id FROM nightly_jobs WHERE job_name = $1`, [jobName]);
+  if (existing.length > 0) return;
+
+  log.info('Iniciando Evolución Autónoma Nocturna');
+  await query(`INSERT INTO nightly_jobs (job_name, status) VALUES ($1, 'running')`, [jobName]);
+
+  try {
+    // 1. Limpiar turnos viejos de rate_limit en memoria si fuera en DB (aquí usamos Redis, que expira solo)
+    
+    // 2. Consolidación de memoria semántica: 
+    // Buscaríamos revisiones huérfanas de `user_fact_revisions` para borrar si tienen más de 30 días.
+    const res = await query(`DELETE FROM user_fact_revisions WHERE replaced_at < NOW() - INTERVAL '30 days'`);
+    
+    // 3. Expiración de trazas de agente antiguas para ahorrar espacio.
+    const tracesRes = await query(`DELETE FROM agent_traces WHERE created_at < NOW() - INTERVAL '60 days'`);
+
+    await query(`UPDATE nightly_jobs SET status = 'success', completed_at = NOW(), records_processed = $1 WHERE job_name = $2`, [res.length + tracesRes.length, jobName]);
+    log.info('Evolución Autónoma Nocturna completada con éxito');
+  } catch (err) {
+    const errStr = err instanceof Error ? err.message : String(err);
+    await query(`UPDATE nightly_jobs SET status = 'error', completed_at = NOW(), error_log = $1 WHERE job_name = $2`, [errStr, jobName]);
+    log.error({ err }, 'Error en Evolución Autónoma Nocturna');
   }
 }
