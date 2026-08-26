@@ -10,7 +10,15 @@ import {
   TrendingUp,
   Clock,
   MessageSquare,
-  Brain
+  Brain,
+  Globe,
+  Megaphone,
+  Calculator,
+  Briefcase,
+  Cpu,
+  Dna,
+  Scale,
+  PackageOpen
 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { useState, useEffect } from 'react';
@@ -341,6 +349,27 @@ export default function Home() {
             </Card>
           </Link>
         </motion.div>
+
+      {/* Supply Chain Lobe */}
+      <motion.div style={{ gridColumn: 'span 12' }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.399 }}>
+        <Link href="/supply" style={{ textDecoration: 'none' }}>
+          <Card hoverEffect style={{ padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '1.5rem', background: 'linear-gradient(45deg, rgba(2, 132, 199, 0.05), transparent)', border: '1px solid rgba(2, 132, 199, 0.2)' }}>
+            <div style={{ width: '56px', height: '56px', borderRadius: '16px', background: 'var(--info)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 30px rgba(2, 132, 199, 0.3)' }}>
+              <PackageOpen size={28} color="#fff" />
+            </div>
+            <div style={{ flex: 1 }}>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.25rem 0', color: 'var(--foreground)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                Lóbulo de Cadena de Suministro (Procurement)
+                <span style={{ fontSize: '0.7rem', padding: '2px 8px', background: 'rgba(2, 132, 199, 0.2)', color: 'var(--info)', borderRadius: '10px' }}>LOGÍSTICA</span>
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text-muted)' }}>El Agente gestiona inventario con IoT, busca proveedores locales y ejecuta las compras de forma autónoma.</p>
+            </div>
+            <div style={{ padding: '0.75rem 1.5rem', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', color: 'var(--foreground)', fontWeight: 600, border: '1px solid rgba(255,255,255,0.1)' }}>
+              Ver Almacén
+            </div>
+          </Card>
+        </Link>
+      </motion.div>
 
       {/* Crawler Intelligence */}
       <motion.div style={{ gridColumn: 'span 12' }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 }}>

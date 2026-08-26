@@ -7,6 +7,7 @@ import { runBrowserAutomation } from './browser.js';
 import { saveToMemory } from './memory.js';
 import { scheduleCron } from './cron.js';
 import { makePhoneCall } from './twilio.js';
+import { checkInventoryTool, triggerProcurementTool } from './supply.js';
 import type { RegisteredTool, ToolResult } from '../core/tools.js';
 
 export async function executeNativeTool(
@@ -45,6 +46,10 @@ export async function executeNativeTool(
       content = await createStripePaymentLink(input);
     } else if (tool.name === 'make_phone_call') {
       content = await makePhoneCall(input);
+    } else if (tool.name === 'check_inventory_levels') {
+      content = await checkInventoryTool.execute(input as any);
+    } else if (tool.name === 'trigger_procurement_cycle') {
+      content = await triggerProcurementTool.execute(input as any);
     } else {
       throw new Error(`Unknown native tool: ${tool.name}`);
     }
