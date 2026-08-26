@@ -9,6 +9,7 @@ import { scheduleCron } from './cron.js';
 import { makePhoneCall } from './twilio.js';
 import { checkInventoryTool, triggerProcurementTool } from './supply.js';
 import { processPassportCheckin, issueDigitalKey } from './kiosk.js';
+import { evaluateWorkforceNeeds, launchRecruitingCampaign, generateContractAndOnboard } from './hr.js';
 import type { RegisteredTool, ToolResult } from '../core/tools.js';
 
 export async function executeNativeTool(
@@ -55,6 +56,12 @@ export async function executeNativeTool(
       content = await processPassportCheckin.execute(input as any);
     } else if (tool.name === 'issue_digital_key') {
       content = await issueDigitalKey.execute(input as any);
+    } else if (tool.name === 'evaluate_workforce_needs') {
+      content = await evaluateWorkforceNeeds.execute(input as any);
+    } else if (tool.name === 'launch_recruiting_campaign') {
+      content = await launchRecruitingCampaign.execute(input as any);
+    } else if (tool.name === 'generate_contract_and_onboard') {
+      content = await generateContractAndOnboard.execute(input as any);
     } else {
       throw new Error(`Unknown native tool: ${tool.name}`);
     }

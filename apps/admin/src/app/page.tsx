@@ -18,7 +18,8 @@ import {
   Cpu,
   Dna,
   Scale,
-  PackageOpen
+  PackageOpen,
+  Users
 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { useState, useEffect } from 'react';
@@ -349,6 +350,27 @@ export default function Home() {
             </Card>
           </Link>
         </motion.div>
+
+      {/* Autonomous HR Lobe */}
+      <motion.div style={{ gridColumn: 'span 12' }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.3995 }}>
+        <Link href="/hr" style={{ textDecoration: 'none' }}>
+          <Card hoverEffect style={{ padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '1.5rem', background: 'linear-gradient(45deg, rgba(234, 179, 8, 0.05), transparent)', border: '1px solid rgba(234, 179, 8, 0.2)' }}>
+            <div style={{ width: '56px', height: '56px', borderRadius: '16px', background: 'var(--warning)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 30px rgba(234, 179, 8, 0.3)' }}>
+              <Users size={28} color="#000" />
+            </div>
+            <div style={{ flex: 1 }}>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.25rem 0', color: 'var(--foreground)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                Lóbulo de Recursos Humanos (Workforce)
+                <span style={{ fontSize: '0.7rem', padding: '2px 8px', background: 'rgba(234, 179, 8, 0.2)', color: 'var(--warning)', borderRadius: '10px' }}>HR AGI</span>
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text-muted)' }}>Contratación predictiva, entrevistas y gestión de nóminas autónoma conectada a Contabilidad.</p>
+            </div>
+            <div style={{ padding: '0.75rem 1.5rem', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', color: 'var(--foreground)', fontWeight: 600, border: '1px solid rgba(255,255,255,0.1)' }}>
+              Ver Plantilla
+            </div>
+          </Card>
+        </Link>
+      </motion.div>
 
       {/* Supply Chain Lobe */}
       <motion.div style={{ gridColumn: 'span 12' }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.399 }}>
